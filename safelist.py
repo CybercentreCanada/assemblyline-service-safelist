@@ -27,6 +27,8 @@ class Safelist(ServiceBase):
 
     def get_tool_version(self):
         epoch = now()
+        # Invalidate cache every 30 minutes
+        # TODO: We could create an API endpoint that would lookup when the last entry in the DB is instead.
         return epoch_to_iso(epoch - (epoch % 1800))
 
     def execute(self, request):
