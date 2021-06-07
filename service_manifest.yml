@@ -1,0 +1,29 @@
+name: Safelist
+version: $SERVICE_TAG
+description: >
+  ALv4 Safelist service
+
+  This service will check the file hashes against Assemblyline's internal safelist infrastructure and mark
+  files as safe accordingly.
+
+accepts: .*
+rejects: empty|metadata/.*
+
+stage: FILTER
+category: Filtering
+
+file_required: false
+timeout: 10
+disable_cache: false
+
+enabled: true
+
+docker_config:
+  image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
+
+heuristics:
+  - heur_id: 1
+    name: Safelisted
+    score: -1000
+    filetype: "*"
+    description: Hash found in safelisting database
