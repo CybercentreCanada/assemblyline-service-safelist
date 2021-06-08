@@ -6,7 +6,7 @@ ENV SERVICE_PATH safelist.Safelist
 USER assemblyline
 
 # Install pip packages
-RUN pip install --no-cache-dir --user redis && rm -rf ~/.cache/pip
+RUN pip install --no-cache-dir --user pycdlib && rm -rf ~/.cache/pip
 
 # Copy Characterize service code
 WORKDIR /opt/al_service
