@@ -18,6 +18,11 @@ disable_cache: false
 
 enabled: true
 
+config:
+  lookup_md5: false
+  lookup_sha1: true
+  lookup_sha256: true
+
 docker_config:
   image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
 

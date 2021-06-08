@@ -33,21 +33,30 @@ class Safelist(ServiceBase):
 
     def execute(self, request):
         result = Result()
-        file_hash = request.sha256
-        resp = self.session.get(f"{self.service_api_host}/api/v1/safelist/{file_hash}/")
-        if resp.ok:
-            data = resp.json()['api_response']
-            # Create a section per source
-            for source in data['sources']:
-                if source['type'] == 'user':
-                    msg = f"User {source['name']} deemed this file as safe for the following reason(s):"
-                else:
-                    msg = f"External safelist source {source['name']} deems this file as safe " \
-                        "for the following reason(s):"
 
-                result.add_section(ResultSection(msg, heuristic=Heuristic(1), body="\n".join(source['reason'])))
+        hashes = []
+        if self.config.get('lookup_sha256', False):
+            hashes.append(request.sha256)
+        if self.config.get('lookup_sha1', False):
+            hashes.append(request.sha1)
+        if self.config.get('lookup_md5', False):
+            hashes.append(request.md5)
 
-            # Stop processing, the file is safe
-            request.drop()
+        for qhash in hashes:
+            resp = self.session.get(f"{self.service_api_host}/api/v1/safelist/{qhash}/")
+            if resp.ok:
+                data = resp.json()['api_response']
+                # Create a section per source
+                for source in data['sources']:
+                    if source['type'] == 'user':
+                        msg = f"User {source['name']} deemed this file as safe for the following reason(s):"
+                    else:
+                        msg = f"External safelist source {source['name']} deems this file as safe " \
+                            "for the following reason(s):"
+
+                    result.add_section(ResultSection(msg, heuristic=Heuristic(1), body="\n".join(source['reason'])))
+
+                # Stop processing, the file is safe
+                request.drop()
 
         request.result = result
