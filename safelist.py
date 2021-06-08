@@ -54,7 +54,10 @@ class Safelist(ServiceBase):
                         msg = f"External safelist source {source['name']} deems this file as safe " \
                             "for the following reason(s):"
 
-                    result.add_section(ResultSection(msg, heuristic=Heuristic(1), body="\n".join(source['reason'])))
+                    result.add_section(
+                        ResultSection(
+                            msg, heuristic=Heuristic(1, signature=f"SAFELIST_{qhash}"),
+                            body="\n".join(source['reason'])))
 
                 # Stop processing, the file is safe
                 request.drop()
