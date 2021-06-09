@@ -26,6 +26,7 @@ UPDATE_CONFIGURATION_PATH = os.environ.get('UPDATE_CONFIGURATION_PATH', "/tmp/sa
 UPDATE_OUTPUT_PATH = os.environ.get('UPDATE_OUTPUT_PATH', "/tmp/safelist_updater_output")
 
 BLOCK_SIZE = 64 * 1024
+HASH_LEN = 1000
 
 
 def add_cacert(cert: str):
@@ -164,10 +165,10 @@ def update(client, cur_logger, working_directory, source, previous_update, previ
         url_download(source, extracted_path, cur_logger, previous_update=previous_update)
 
     if os.path.exists(extracted_path) and os.path.isfile(extracted_path):
-        added = 0
-        updated = 0
+        success = 0
         with open(extracted_path) as fh:
             reader = csv.reader(fh, delimiter=',', quotechar='"')
+            hash_list = []
             for line in reader:
                 sha1, md5, _, filename, size = line[:5]
                 if sha1 == "SHA-1":
@@ -175,17 +176,19 @@ def update(client, cur_logger, working_directory, source, previous_update, previ
 
                 data = {"fileinfo": {"md5": md5.lower(), "sha1": sha1.lower(), "size": size, }, "sources": [
                     {"name": source['name'], 'type': 'external', "reason": [f"Exist in source as {filename}"]}]}
-                try:
-                    resp = client._connection.put(f"api/v4/safelist/{sha1.lower()}/", json=data)
-                    if resp['op'] == 'add':
-                        added += 1
-                    else:
-                        updated += 1
-                except Exception as e:
-                    cur_logger.error(f"Failed to insert hash into safelist: {str(e)}")
+                hash_list.append(data)
+
+                if len(hash_list) % HASH_LEN == 0:
+                    try:
+                        resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
+                        success += resp['success']
+                    except Exception as e:
+                        cur_logger.error(f"Failed to insert hash into safelist: {str(e)}")
+
+                    hash_list = []
 
         os.unlink(extracted_path)
-        cur_logger.info(f"Import finished with the following stats: (Added hashes: {added}, updated hashes: {updated})")
+        cur_logger.info(f"Import finished. {success} hashes have been processed.")
 
 
 def run_updater(cur_logger, update_config_path, update_output_path):
