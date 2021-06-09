@@ -28,10 +28,15 @@ docker_config:
 
 heuristics:
   - heur_id: 1
-    name: Safelisted
+    name: Safelisted by external source
     score: -1000
     filetype: "*"
-    description: Hash found in safelisting database
+    description: Hash is found in an external source of know good files
+  - heur_id: 2
+    name: Safelisted by user
+    score: -1000
+    filetype: "*"
+    description: A user of this system found this file to be safe
 
 update_config:
   update_interval_seconds: 3600

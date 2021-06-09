@@ -50,13 +50,15 @@ class Safelist(ServiceBase):
                 for source in data['sources']:
                     if source['type'] == 'user':
                         msg = f"User {source['name']} deemed this file as safe for the following reason(s):"
+                        heur_id = 2
                     else:
                         msg = f"External safelist source {source['name']} deems this file as safe " \
                             "for the following reason(s):"
+                        heur_id = 1
 
                     result.add_section(
                         ResultSection(
-                            msg, heuristic=Heuristic(1, signature=f"SAFELIST_{qhash}"),
+                            msg, heuristic=Heuristic(heur_id, signature=f"SAFELIST_{qhash}"),
                             body="\n".join(source['reason'])))
 
                 # Stop processing, the file is safe
