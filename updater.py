@@ -174,8 +174,16 @@ def update(client, cur_logger, working_directory, source, previous_update, previ
                 if sha1 == "SHA-1":
                     continue
 
-                data = {"fileinfo": {"md5": md5.lower(), "sha1": sha1.lower(), "size": size, }, "sources": [
-                    {"name": source['name'], 'type': 'external', "reason": [f"Exist in source as {filename}"]}]}
+                data = {
+                    "file": {"name": [filename], "size": size},
+                    "hashes": {"md5": md5.lower(), "sha1": sha1.lower()},
+                    "sources": [
+                        {"name": source['name'],
+                         'type': 'external',
+                         "reason": [f"Exist in source as {filename}"]}
+                    ],
+                    'type': "file"
+                }
                 hash_list.append(data)
 
                 if len(hash_list) % HASH_LEN == 0:

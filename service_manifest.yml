@@ -47,9 +47,9 @@ update_config:
     command: ["python", "updater.py"]
     image: ${REGISTRY}cccs/assemblyline-service-whitelist:$SERVICE_TAG
   sources:
-    - name: NSRL_RDS_modernm
+    - name: NSRL_modernm
       pattern: rds_modernm/NSRLFile.txt
       uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/rds_modernm.zip
-    - name: NSRL_RDS_android
+    - name: NSRL_android
       pattern: NSRLFile.txt
       uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/RDS_android.iso
