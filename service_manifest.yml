@@ -40,7 +40,7 @@ heuristics:
 
 update_config:
   update_interval_seconds: 86400
-  wait_for-update: false
+  wait_for_update: false
   generates_signatures: false
   method: run
   run_options:
