@@ -25,6 +25,8 @@ config:
 
 docker_config:
   image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
+  cpu_cores: 0.15
+  ram_mb: 256
 
 heuristics:
   - heur_id: 1
