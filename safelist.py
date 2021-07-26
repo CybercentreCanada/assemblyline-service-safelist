@@ -1,8 +1,4 @@
 
-import os
-
-import requests
-
 from assemblyline.common.isotime import now, epoch_to_iso
 from assemblyline_v4_service.common.base import ServiceBase
 from assemblyline_v4_service.common.result import Heuristic, Result, ResultSection
@@ -11,19 +7,11 @@ from assemblyline_v4_service.common.result import Heuristic, Result, ResultSecti
 class Safelist(ServiceBase):
     def __init__(self, config=None):
         super(Safelist, self).__init__(config)
-        self.session = None
-        self.service_api_host = None
+        self.api_interface = None
 
     def start(self):
         # Initialize session
-        self.service_api_host = os.environ.get("SERVICE_API_HOST", "http://localhost:5003")
-        self.session = requests.Session()
-        self.session.headers.update(dict(
-            X_APIKEY=os.environ.get("SERVICE_API_AUTH_KEY", "ThisIsARandomAuthKey...ChangeMe!"),
-            container_id=os.environ.get('HOSTNAME', 'dev-service'),
-            service_name=self.service_attributes.name,
-            service_version=self.service_attributes.version
-        ))
+        self.api_interface = self.get_api_interface()
 
     def get_tool_version(self):
         epoch = now()
@@ -43,26 +31,24 @@ class Safelist(ServiceBase):
             hashes.append(request.md5)
 
         for qhash in hashes:
-            resp = self.session.get(f"{self.service_api_host}/api/v1/safelist/{qhash}/")
-            if resp.ok:
-                data = resp.json()['api_response']
-                if data['enabled'] and data['type'] == "file":
-                    # Create a section per source
-                    for source in data['sources']:
-                        if source['type'] == 'user':
-                            msg = f"User {source['name']} deemed this file as safe for the following reason(s):"
-                            heur_id = 2
-                        else:
-                            msg = f"External safelist source {source['name']} deems this file as safe " \
-                                "for the following reason(s):"
-                            heur_id = 1
+            data = self.api_interface.lookup_safelist(qhash)
+            if data and data['enabled'] and data['type'] == "file":
+                # Create a section per source
+                for source in data['sources']:
+                    if source['type'] == 'user':
+                        msg = f"User {source['name']} deemed this file as safe for the following reason(s):"
+                        heur_id = 2
+                    else:
+                        msg = f"External safelist source {source['name']} deems this file as safe " \
+                            "for the following reason(s):"
+                        heur_id = 1
 
-                        result.add_section(
-                            ResultSection(
-                                msg, heuristic=Heuristic(heur_id, signature=f"SAFELIST_{qhash}"),
-                                body="\n".join(source['reason'])))
+                    result.add_section(
+                        ResultSection(
+                            msg, heuristic=Heuristic(heur_id, signature=f"SAFELIST_{qhash}"),
+                            body="\n".join(source['reason'])))
 
-                    # Stop processing, the file is safe
-                    request.drop()
+                # Stop processing, the file is safe
+                request.drop()
 
         request.result = result
