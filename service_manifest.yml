@@ -19,6 +19,7 @@ disable_cache: false
 enabled: true
 
 config:
+  cache_timeout_seconds: 1800
   lookup_md5: false
   lookup_sha1: true
   lookup_sha256: true
@@ -49,7 +50,8 @@ update_config:
     allow_internet_access: true
     command: ["python", "updater.py"]
     image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
-  sources: []
+  sources:
+    []
     # We will not force a safelist onto our users.
     # Here are exemples of NSRL sources that are working with the updater:
     # - name: NSRL_modernm
