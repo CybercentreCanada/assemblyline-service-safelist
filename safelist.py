@@ -8,16 +8,17 @@ class Safelist(ServiceBase):
     def __init__(self, config=None):
         super(Safelist, self).__init__(config)
         self.api_interface = None
+        # Default cache timeout invalidates the cache every 30 minutes
+        self.timeout = 1800
 
     def start(self):
         # Initialize session
         self.api_interface = self.get_api_interface()
+        self.timeout = self.config.get('cache_timeout_seconds', self.timeout)
 
     def get_tool_version(self):
         epoch = now()
-        # Invalidate cache every 30 minutes
-        # TODO: We could create an API endpoint that would lookup when the last entry in the DB is instead.
-        return epoch_to_iso(epoch - (epoch % 1800))
+        return epoch_to_iso(epoch - (epoch % self.timeout))
 
     def execute(self, request):
         result = Result()
