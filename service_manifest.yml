@@ -57,11 +57,6 @@ update_config:
   update_interval_seconds: 86400
   wait_for_update: false
   generates_signatures: false
-  method: run
-  run_options:
-    allow_internet_access: true
-    command: ["python", "updater.py"]
-    image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
   sources:
     []
     # We will not force a safelist onto our users.
