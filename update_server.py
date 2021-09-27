@@ -18,10 +18,10 @@ import pycdlib
 from assemblyline_client import get_client
 from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
 
-al_log.init_logging('updater.safelist')
+
 classification = forge.get_classification()
 
-
+al_log.init_logging('updater.safelist', log_level=os.environ.get('LOG_LEVEL', "WARNING"))
 LOGGER = logging.getLogger('assemblyline.updater.safelist')
 
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
@@ -244,5 +244,5 @@ class SafelistUpdateServer(ServiceUpdater):
 
 
 if __name__ == '__main__':
-    with SafelistUpdateServer() as server:
+    with SafelistUpdateServer(logger=LOGGER) as server:
         server.serve_forever()
