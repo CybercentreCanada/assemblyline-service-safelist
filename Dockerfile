@@ -9,9 +9,6 @@ USER assemblyline
 # Install pip packages
 RUN pip install --no-cache-dir --user pycdlib && rm -rf ~/.cache/pip
 
-# Install packages for update-server
-RUN pip install gunicorn flask && rm -rf ~/.cache/pip
-
 # Copy Characterize service code
 WORKDIR /opt/al_service
 COPY . .

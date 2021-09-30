@@ -1,47 +1,22 @@
 import csv
-import logging
 import os
-import shutil
 import tempfile
 import time
 import zipfile
-from zipfile import ZipFile
-
-import certifi
 import requests
-from assemblyline.common import forge
-from assemblyline.common import log as al_log
-from assemblyline.common.isotime import epoch_to_iso, iso_to_epoch
+
+from assemblyline.common.digests import get_sha256_for_file
+from assemblyline.common.isotime import iso_to_epoch
 from assemblyline.odm.models.service import Service, UpdateSource
+from assemblyline_client import get_client, Client
+from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
+from assemblyline_v4_service.updater.helper import SkipSource, BLOCK_SIZE, add_cacert
 
 import pycdlib
-from assemblyline_client import get_client
-from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
-
-
-classification = forge.get_classification()
-
-al_log.init_logging('updater.safelist', log_level=os.environ.get('LOG_LEVEL', "WARNING"))
-LOGGER = logging.getLogger('assemblyline.updater.safelist')
 
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
-UPDATE_CONFIGURATION_PATH = os.environ.get('UPDATE_CONFIGURATION_PATH', "/tmp/safelist_updater_config.yaml")
-UPDATE_OUTPUT_PATH = os.environ.get('UPDATE_OUTPUT_PATH', "/tmp/safelist_updater_output")
 UPDATE_DIR = os.path.join(tempfile.gettempdir(), 'safelist_updates')
-
-BLOCK_SIZE = 64 * 1024
 HASH_LEN = 1000
-
-
-class SkipSource(RuntimeError):
-    pass
-
-
-def add_cacert(cert: str):
-    # Add certificate to requests
-    cafile = certifi.where()
-    with open(cafile, 'a') as ca_editor:
-        ca_editor.write(f"\n{cert}")
 
 
 def url_download(source, target_path, logger, previous_update=None):
@@ -159,7 +134,40 @@ def download_extract_iso(logger, source, target_path, extracted_path, UPDATE_DIR
 class SafelistUpdateServer(ServiceUpdater):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.updater_type = "safelist"
+
+    def import_update(self, file_path, client: Client, source_name: str, default_classification=None):
+        success = 0
+        with open(file_path) as fh:
+            reader = csv.reader(fh, delimiter=',', quotechar='"')
+            hash_list = []
+            for line in reader:
+                sha1, md5, _, filename, size = line[:5]
+                if sha1 == "SHA-1":
+                    continue
+
+                data = {
+                    "file": {"name": [filename], "size": size},
+                    "hashes": {"md5": md5.lower(), "sha1": sha1.lower()},
+                    "sources": [
+                        {"name": source_name,
+                            'type': 'external',
+                            "reason": [f"Exist in source as {filename}"]}
+                    ],
+                    'type': "file"
+                }
+                hash_list.append(data)
+
+                if len(hash_list) % HASH_LEN == 0:
+                    try:
+                        resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
+                        success += resp['success']
+                    except Exception as e:
+                        self.log.error(f"Failed to insert hash into safelist: {str(e)}")
+
+                    hash_list = []
+
+        os.unlink(file_path)
+        self.log.info(f"Import finished. {success} hashes have been processed.")
 
     def do_source_update(self, service: Service) -> None:
         self.log.info(f"Connecting to Assemblyline API: {UI_SERVER}...")
@@ -175,15 +183,11 @@ class SafelistUpdateServer(ServiceUpdater):
             previous_hashes: dict[str, str] = self.get_source_extra()
             sources: dict[str, UpdateSource] = {_s['name']: _s for _s in service.update_config.sources}
             files_sha256: dict[str, str] = {}
-            source_default_classification = {}
 
             # Go through each source and download file
             for source_name, source_obj in sources.items():
                 source = source_obj.as_primitives()
                 uri: str = source['uri']
-                cache_name = f"{source_name}.txt"
-                source_default_classification[source_name] = source.get('default_classification',
-                                                                        classification.UNRESTRICTED)
                 self.log.info(f"Processing source: {source['name'].upper()}")
                 download_name = os.path.basename(uri)
                 target_path = os.path.join(tempfile.mkdtemp(), download_name)
@@ -198,44 +202,15 @@ class SafelistUpdateServer(ServiceUpdater):
                                              extracted_path, UPDATE_DIR, previous_update=old_update_time)
                     else:
                         url_download(source, extracted_path, self.log, previous_update=old_update_time)
+
+                    if os.path.exists(extracted_path) and os.path.isfile(extracted_path):
+                        previous_hashes[source_name] = {extracted_path: get_sha256_for_file(extracted_path)}
+                        self.import_update(extracted_path, client, source_name)
+
                 except SkipSource:
-                    if cache_name in previous_hashes:
-                        files_sha256[cache_name] = previous_hashes[cache_name]
+                    if source_name in previous_hashes:
+                        files_sha256[source_name] = previous_hashes[source_name]
                     continue
-
-                if os.path.exists(extracted_path) and os.path.isfile(extracted_path):
-                    success = 0
-                    with open(extracted_path) as fh:
-                        reader = csv.reader(fh, delimiter=',', quotechar='"')
-                        hash_list = []
-                        for line in reader:
-                            sha1, md5, _, filename, size = line[:5]
-                            if sha1 == "SHA-1":
-                                continue
-
-                            data = {
-                                "file": {"name": [filename], "size": size},
-                                "hashes": {"md5": md5.lower(), "sha1": sha1.lower()},
-                                "sources": [
-                                    {"name": source['name'],
-                                     'type': 'external',
-                                     "reason": [f"Exist in source as {filename}"]}
-                                ],
-                                'type': "file"
-                            }
-                            hash_list.append(data)
-
-                            if len(hash_list) % HASH_LEN == 0:
-                                try:
-                                    resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
-                                    success += resp['success']
-                                except Exception as e:
-                                    self.log.error(f"Failed to insert hash into safelist: {str(e)}")
-
-                                hash_list = []
-
-                    os.unlink(extracted_path)
-                    self.log.info(f"Import finished. {success} hashes have been processed.")
 
         self.set_source_update_time(run_time)
         self.set_source_extra(files_sha256)
@@ -244,5 +219,5 @@ class SafelistUpdateServer(ServiceUpdater):
 
 
 if __name__ == '__main__':
-    with SafelistUpdateServer(logger=LOGGER) as server:
+    with SafelistUpdateServer(default_pattern="*.txt") as server:
         server.serve_forever()
