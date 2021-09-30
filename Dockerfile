@@ -3,6 +3,9 @@ FROM cccs/assemblyline-v4-service-base:$branch
 
 ENV SERVICE_PATH safelist.Safelist
 
+USER root
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 # Switch to assemblyline user
 USER assemblyline
 
