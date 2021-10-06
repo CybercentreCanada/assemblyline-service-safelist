@@ -169,6 +169,9 @@ class SafelistUpdateServer(ServiceUpdater):
         os.unlink(file_path)
         self.log.info(f"Import finished. {success} hashes have been processed.")
 
+    def do_local_update(self) -> None:
+        pass
+
     def do_source_update(self, service: Service) -> None:
         self.log.info(f"Connecting to Assemblyline API: {UI_SERVER}...")
         run_time = time.time()
