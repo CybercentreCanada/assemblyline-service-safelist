@@ -20,6 +20,10 @@ class Safelist(ServiceBase):
         epoch = now()
         return epoch_to_iso(epoch - (epoch % self.timeout))
 
+    # Utilizes the Safelist API, doesn't need to download files from updater
+    def _download_rules(self):
+        pass
+
     def execute(self, request):
         result = Result()
 

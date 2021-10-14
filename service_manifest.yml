@@ -41,19 +41,26 @@ heuristics:
     filetype: "*"
     description: A user of this system found this file to be safe
 
+dependencies:
+  updates:
+    container:
+      allow_internet_access: true
+      command: ["python", "-m", "update_server"]
+      image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
+      ports: ["5003"]
+      # Upper-bound, adjust based on sources
+      # cpu_cores: 2
+      # ram_mb: 4096
+    run_as_core: True
+
 update_config:
   update_interval_seconds: 86400
   wait_for_update: false
   generates_signatures: false
-  method: run
-  run_options:
-    allow_internet_access: true
-    command: ["python", "updater.py"]
-    image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
   sources:
     []
     # We will not force a safelist onto our users.
-    # Here are exemples of NSRL sources that are working with the updater:
+    # Here are examples of NSRL sources that are working with the updater:
     # - name: NSRL_modernm
     #   pattern: rds_modernm/NSRLFile.txt
     #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/rds_modernm.zip
