@@ -7,13 +7,10 @@ from assemblyline_v4_service.common.result import Heuristic, Result, ResultSecti
 class Safelist(ServiceBase):
     def __init__(self, config=None):
         super(Safelist, self).__init__(config)
-        self.api_interface = None
         # Default cache timeout invalidates the cache every 30 minutes
         self.timeout = 1800
 
     def start(self):
-        # Initialize session
-        self.api_interface = self.get_api_interface()
         self.timeout = self.config.get('cache_timeout_seconds', self.timeout)
 
     def get_tool_version(self):
