@@ -140,6 +140,15 @@ class SafelistUpdateServer(ServiceUpdater):
         with open(file_path) as fh:
             reader = csv.reader(fh, delimiter=',', quotechar='"')
             hash_list = []
+
+            def add_hash_set() -> int:
+                try:
+                    resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
+                    return resp['success']
+                except Exception as e:
+                    self.log.error(f"Failed to insert hash into safelist: {str(e)}")
+                return 0
+
             for line in reader:
                 sha1, md5, _, filename, size = line[:5]
                 if sha1 == "SHA-1":
@@ -158,13 +167,12 @@ class SafelistUpdateServer(ServiceUpdater):
                 hash_list.append(data)
 
                 if len(hash_list) % HASH_LEN == 0:
-                    try:
-                        resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
-                        success += resp['success']
-                    except Exception as e:
-                        self.log.error(f"Failed to insert hash into safelist: {str(e)}")
-
+                    # Add 1000 item batch, record success, then start anew
+                    success += add_hash_set()
                     hash_list = []
+
+            # Add any remaining items to safelist (if any)
+            success += add_hash_set()
 
         os.unlink(file_path)
         self.log.info(f"Import finished. {success} hashes have been processed.")
