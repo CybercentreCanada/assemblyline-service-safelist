@@ -166,6 +166,15 @@ class SafelistUpdateServer(ServiceUpdater):
 
                     hash_list = []
 
+            #Put remaining items in hash_list into safelist since no length of hash_list less than HASH_LEN will ever pass the "if len(hash_list) % HASH_LEN == 0:"
+            #For computational effeciency, instead of checking this if statmeent each line, we can simply check it after reading all lines from the file in previous for loop
+            if len(hash_list) < HASH_LEN and len(hash_list) > 0:
+                try:
+                    resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
+                    success += resp['success']
+                except Exception as e:
+                    self.log.error(f"Failed to insert hash into safelist: {str(e)}")
+
         os.unlink(file_path)
         self.log.info(f"Import finished. {success} hashes have been processed.")
 
