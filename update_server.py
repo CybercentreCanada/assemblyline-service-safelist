@@ -180,23 +180,30 @@ class SafelistUpdateServer(ServiceUpdater):
     def do_local_update(self) -> None:
         pass
 
-    def do_source_update(self, service: Service) -> None:
+    def do_source_update(self, service: Service, specific_sources: list[str] = []) -> None:
         self.log.info(f"Connecting to Assemblyline API: {UI_SERVER}...")
         run_time = time.time()
         username = self.ensure_service_account()
         with temporary_api_key(self.datastore, username) as api_key:
             client = get_client(UI_SERVER, apikey=(username, api_key), verify=False)
-            old_update_time = self.get_source_update_time()
-
             self.log.info("Connected!")
 
             # Parse updater configuration
-            previous_hashes: dict[str, str] = self.get_source_extra()
+            previous_hashes: dict[str, dict[str, str]] = self.get_source_extra()
             sources: dict[str, UpdateSource] = {_s['name']: _s for _s in service.update_config.sources}
-            files_sha256: dict[str, str] = {}
+            files_sha256: dict[str, dict[str, str]] = {}
 
             # Go through each source and download file
             for source_name, source_obj in sources.items():
+                # Set current source for pushing state to UI
+                self._current_source = source_name
+                old_update_time = self.get_source_update_time()
+                if specific_sources and source_name not in specific_sources:
+                    # Parameter is used to determine if you want to update a specific source only
+                    # Otherwise, assume we want to update all sources
+                    continue
+
+                self.push_status("UPDATING", "Starting..")
                 source = source_obj.as_primitives()
                 uri: str = source['uri']
                 self.log.info(f"Processing source: {source['name'].upper()}")
@@ -205,6 +212,9 @@ class SafelistUpdateServer(ServiceUpdater):
                 extracted_path = os.path.join(UPDATE_DIR, source['name'])
 
                 try:
+                    self.push_status("UPDATING", "Pulling..")
+
+                    # Pull sources from external locations (method depends on the URL)
                     if download_name.endswith(".zip"):
                         download_extract_zip(self.log, source, target_path,
                                              extracted_path, UPDATE_DIR, previous_update=old_update_time)
@@ -214,17 +224,27 @@ class SafelistUpdateServer(ServiceUpdater):
                     else:
                         url_download(source, extracted_path, self.log, previous_update=old_update_time)
 
+                    # Add to collection of sources for caching purposes
+                    self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
                     if os.path.exists(extracted_path) and os.path.isfile(extracted_path):
                         previous_hashes[source_name] = {extracted_path: get_sha256_for_file(extracted_path)}
+                        # Import into Assemblyline
+                        self.push_status("UPDATING", "Importing..")
                         self.import_update(extracted_path, client, source_name)
+                    self.push_status("DONE", "Signature(s) Imported.")
 
                 except SkipSource:
+                    # This source hasn't changed, no need to re-import into Assemblyline
+                    self.log.info(f'No new {self.updater_type} rule files to process for {source_name}')
                     if source_name in previous_hashes:
                         files_sha256[source_name] = previous_hashes[source_name]
+                    self.push_status("DONE", "Skipped.")
+                except Exception as e:
+                    self.push_status("ERROR", str(e))
                     continue
 
-        self.set_source_update_time(run_time)
-        self.set_source_extra(files_sha256)
+                self.set_source_update_time(run_time)
+                self.set_source_extra(files_sha256)
         self.set_active_config_hash(self.config_hash(service))
         self.local_update_flag.set()
 
