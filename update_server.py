@@ -15,6 +15,7 @@ from assemblyline_v4_service.updater.helper import SkipSource, BLOCK_SIZE, add_c
 import pycdlib
 
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
+UI_SERVER_CA = os.environ.get('AL_ROOT_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
 UPDATE_DIR = os.path.join(tempfile.gettempdir(), 'safelist_updates')
 HASH_LEN = 1000
 
@@ -185,7 +186,8 @@ class SafelistUpdateServer(ServiceUpdater):
         run_time = time.time()
         username = self.ensure_service_account()
         with temporary_api_key(self.datastore, username) as api_key:
-            client = get_client(UI_SERVER, apikey=(username, api_key), verify=False)
+            verify = None if not os.path.exists(UI_SERVER_CA) else UI_SERVER_CA
+            client = get_client(UI_SERVER, apikey=(username, api_key), verify=verify)
             self.log.info("Connected!")
 
             # Parse updater configuration
