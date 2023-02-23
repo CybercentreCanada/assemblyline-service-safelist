@@ -3,6 +3,9 @@ FROM cccs/assemblyline-v4-service-base:$branch
 
 ENV SERVICE_PATH safelist.Safelist
 
+USER root
+RUN apt update -y && apt install -y p7zip-full
+
 # Switch to assemblyline user
 USER assemblyline
 
