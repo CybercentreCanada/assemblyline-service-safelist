@@ -224,8 +224,6 @@ class SafelistUpdateServer(ServiceUpdater):
                 uri: str = source['uri']
                 self.log.info(f"Processing source: {source['name'].upper()}")
                 download_name = os.path.basename(uri)
-                orig_source_pattern = source['pattern']
-                source['pattern'] = f'.*{download_name}'
 
                 with tempfile.TemporaryDirectory() as update_dir:
                     try:
@@ -234,7 +232,7 @@ class SafelistUpdateServer(ServiceUpdater):
                         file = url_download(source=source, previous_update=old_update_time, logger=self.log,
                                             output_dir=update_dir)
 
-                        file = extract_safelist(file, orig_source_pattern, self.log)
+                        file = extract_safelist(file, source['pattern'], self.log)
                         # Add to collection of sources for caching purposes
                         self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
                         previous_hashes[source_name] = {file: get_sha256_for_file(file)}
