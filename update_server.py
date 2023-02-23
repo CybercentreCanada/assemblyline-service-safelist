@@ -1,27 +1,33 @@
 import csv
 import os
+import pycdlib
+import requests
+import subprocess
 import tempfile
 import time
-import zipfile
-import requests
 
 from assemblyline.common.digests import get_sha256_for_file
-from assemblyline.common.isotime import iso_to_epoch
 from assemblyline.odm.models.service import Service, UpdateSource
 from assemblyline_client import get_client, Client
 from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
-from assemblyline_v4_service.updater.helper import SkipSource, BLOCK_SIZE, add_cacert
+from assemblyline_v4_service.updater.helper import add_cacert, BLOCK_SIZE, SkipSource, urlparse
 
-import pycdlib
 
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
 UI_SERVER_CA = os.environ.get('AL_ROOT_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
-UPDATE_DIR = os.path.join(tempfile.gettempdir(), 'safelist_updates')
 HASH_LEN = 1000
 
 
-def url_download(source, target_path, logger, previous_update=None):
+def url_download(source, previous_update=None, logger=None, output_dir=None):
+    """
+
+    :param source:
+    :param previous_update:
+    :return:
+    """
+    name = source['name']
     uri = source['uri']
+    pattern = source.get('pattern', None)
     username = source.get('username', None)
     password = source.get('password', None)
     ca_cert = source.get('ca_cert', None)
@@ -29,9 +35,11 @@ def url_download(source, target_path, logger, previous_update=None):
     auth = (username, password) if username and password else None
 
     proxy = source.get('proxy', None)
-    headers = source.get('headers', None)
+    headers_list = source.get('headers', [])
+    headers = {}
+    [headers.update({header['name']: header['value']}) for header in headers_list]
 
-    logger.info(f"This source is configured to {'ignore SSL errors' if ignore_ssl_errors else 'verify SSL'}.")
+    logger.info(f"{name} source is configured to {'ignore SSL errors' if ignore_ssl_errors else 'verify SSL'}.")
     if ca_cert:
         logger.info("A CA certificate has been provided with this source.")
         add_cacert(ca_cert)
@@ -41,53 +49,60 @@ def url_download(source, target_path, logger, previous_update=None):
     session.verify = not ignore_ssl_errors
 
     # Let https requests go through proxy
-    if proxy:
-        os.environ['https_proxy'] = proxy
+    proxies = {'http': proxy, 'https': proxy} if proxy else None
 
     try:
-        if isinstance(previous_update, str):
-            previous_update = iso_to_epoch(previous_update)
+        response = None
+        with tempfile.NamedTemporaryFile('w') as private_key_file:
+            if source.get('private_key'):
+                logger.info('A private key has been provided with this source')
+                private_key_file.write(source['private_key'])
+                private_key_file.seek(0)
+                session.cert = private_key_file.name
 
-        # Check the response header for the last modified date
-        response = session.head(uri, auth=auth, headers=headers)
-        last_modified = response.headers.get('Last-Modified', None)
-        if last_modified:
-            # Convert the last modified time to epoch
-            last_modified = time.mktime(time.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z"))
+            # Check the response header for the last modified date
+            response = session.head(uri, auth=auth, headers=headers, proxies=proxies)
+            last_modified = response.headers.get('Last-Modified', None)
+            if last_modified:
+                # Convert the last modified time to epoch
+                last_modified = time.mktime(time.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z"))
 
-            # Compare the last modified time with the last updated time
-            if previous_update and last_modified <= previous_update:
-                # File has not been modified since last update, do nothing
-                logger.info("The file has not been modified since last run, skipping...")
-                return False
+                # Compare the last modified time with the last updated time
+                if previous_update and last_modified <= previous_update:
+                    # File has not been modified since last update, do nothing
+                    raise SkipSource()
 
-        if previous_update:
-            previous_update = time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime(previous_update))
-            if headers:
-                headers['If-Modified-Since'] = previous_update
-            else:
-                headers = {'If-Modified-Since': previous_update}
+            if previous_update:
+                previous_update = time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime(previous_update))
+                if headers:
+                    headers['If-Modified-Since'] = previous_update
+                else:
+                    headers = {'If-Modified-Since': previous_update}
 
-        logger.info(f"Downloading file from: {source['uri']}")
-        with session.get(uri, auth=auth, headers=headers, stream=True) as response:
-            # Check the response code
-            if response.status_code == requests.codes['not_modified']:
-                # File has not been modified since last update, do nothing
-                logger.info("The file has not been modified since last run, skipping...")
-                raise SkipSource
-            elif response.ok:
-                with open(target_path, 'wb') as f:
-                    for content in response.iter_content(BLOCK_SIZE):
-                        f.write(content)
+            response = session.get(uri, auth=auth, headers=headers, proxies=proxies, stream=True)
 
-                # Clear proxy setting
-                if proxy:
-                    del os.environ['https_proxy']
+        # Check the response code
+        if response.status_code == requests.codes['not_modified']:
+            # File has not been modified since last update, do nothing
+            raise SkipSource()
+        elif response.ok:
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
 
-                # Return file_path
-                return True
-    except requests.Timeout:
-        pass
+            file_name = os.path.basename(urlparse(uri).path)
+            file_path = os.path.join(output_dir, file_name)
+            with open(file_path, 'wb') as f:
+                for content in response.iter_content(BLOCK_SIZE):
+                    f.write(content)
+
+            return file_path
+        else:
+            logger.warning(f"Download not successful: {response.content}")
+            return None
+
+    except SkipSource:
+        # Raise to calling function for handling
+        raise
     except Exception as e:
         # Catch all other types of exceptions such as ConnectionError, ProxyError, etc.
         logger.warning(str(e))
@@ -97,39 +112,38 @@ def url_download(source, target_path, logger, previous_update=None):
         session.close()
 
 
-def download_extract_zip(logger, source, target_path, extracted_path, UPDATE_DIR, previous_update):
-    if url_download(source, target_path, logger, previous_update=previous_update):
-        logger.info(f"Unzipping downloaded file {target_path}... into {extracted_path}")
-
-        with zipfile.ZipFile(target_path) as z:
-            z.extract(source['pattern'], UPDATE_DIR)
-        os.unlink(target_path)
-
-        os.rename(os.path.join(UPDATE_DIR, source['pattern']), extracted_path)
-        logger.info(f"Unzip finished, created file {extracted_path}")
-
-
-def download_extract_iso(logger, source, target_path, extracted_path, UPDATE_DIR, previous_update):
-    # NSRL ISO only!
-    if url_download(source, target_path, logger, previous_update=previous_update):
-        zip_file = f"{target_path}.zip"
-
+def extract_safelist(file, pattern, logger):
+    logger.info(f'Extracting safelist file from {file}')
+    dir = os.path.dirname(file)
+    try:
+        # Check if we're dealing with an NSRL ISO
         iso = pycdlib.PyCdlib()
-        iso.open(target_path)
+        iso.open(file)
+        iso.get_entry('/NSRLFILE.ZIP;1')
+        del iso
+        logger.info(f'{file} is an NSRL ISO. Extracting embedded "NSRLFile.txt.zip"..')
 
-        logger.info("Extracting NSRLFILE.ZIP form ISO...")
-        with open(zip_file, "wb") as zip_fh:
-            iso.get_file_from_iso_fp(zip_fh, iso_path='/NSRLFILE.ZIP;1')
-        iso.close()
-        os.unlink(target_path)
+        # If we are, then we need to extract the embedded file as assign that as the 'true' file to be extracted
+        zip_file = os.path.join(dir, 'NSRLFile.txt.zip')
+        subprocess.run(['7z', 'x', '-y', file, f'-o{dir}', 'NSRLFile.txt.zip'], capture_output=True)
+        os.unlink(file)
+        file = zip_file
 
-        logger.info(f"Unzipping {zip_file} ...")
-        with zipfile.ZipFile(zip_file) as z:
-            z.extract(source['pattern'], UPDATE_DIR)
-        os.unlink(zip_file)
+    except pycdlib.pycdlibexception.PyCdlibInvalidInput:
+        # ISO, but not an NSRL ISO
+        pass
 
-        os.rename(os.path.join(UPDATE_DIR, source['pattern']), extracted_path)
-        logger.info(f"Unzip finished, created file {extracted_path}")
+    except pycdlib.pycdlibexception.PyCdlibInvalidISO:
+        # Not an ISO, treat as normal ZIP (or something that 7z can handle)
+        pass
+
+    logger.info(f"Extracting {pattern} from {file}..")
+    safelist_file = os.path.join(dir, pattern)
+    subprocess.run(['7z', 'x', '-y', file, f'-o{dir}', pattern], capture_output=True)
+    logger.info(f'Extraction complete: {safelist_file}')
+    os.unlink(file)
+
+    return safelist_file
 
 
 class SafelistUpdateServer(ServiceUpdater):
@@ -210,43 +224,37 @@ class SafelistUpdateServer(ServiceUpdater):
                 uri: str = source['uri']
                 self.log.info(f"Processing source: {source['name'].upper()}")
                 download_name = os.path.basename(uri)
-                target_path = os.path.join(tempfile.mkdtemp(), download_name)
-                extracted_path = os.path.join(UPDATE_DIR, source['name'])
+                orig_source_pattern = source['pattern']
+                source['pattern'] = f'.*{download_name}'
 
-                try:
-                    self.push_status("UPDATING", "Pulling..")
+                with tempfile.TemporaryDirectory() as update_dir:
+                    try:
+                        self.push_status("UPDATING", "Pulling..")
+                        # Pull sources from external locations (method depends on the URL)
+                        file = url_download(source=source, previous_update=old_update_time, logger=self.log,
+                                            output_dir=update_dir)
 
-                    # Pull sources from external locations (method depends on the URL)
-                    if download_name.endswith(".zip"):
-                        download_extract_zip(self.log, source, target_path,
-                                             extracted_path, UPDATE_DIR, previous_update=old_update_time)
-                    elif download_name.endswith(".iso"):
-                        download_extract_iso(self.log, source, target_path,
-                                             extracted_path, UPDATE_DIR, previous_update=old_update_time)
-                    else:
-                        url_download(source, extracted_path, self.log, previous_update=old_update_time)
-
-                    # Add to collection of sources for caching purposes
-                    self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
-                    if os.path.exists(extracted_path) and os.path.isfile(extracted_path):
-                        previous_hashes[source_name] = {extracted_path: get_sha256_for_file(extracted_path)}
+                        file = extract_safelist(file, orig_source_pattern, self.log)
+                        # Add to collection of sources for caching purposes
+                        self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
+                        previous_hashes[source_name] = {file: get_sha256_for_file(file)}
                         # Import into Assemblyline
                         self.push_status("UPDATING", "Importing..")
-                        self.import_update(extracted_path, client, source_name)
-                    self.push_status("DONE", "Signature(s) Imported.")
+                        self.import_update(file, client, source_name)
+                        self.push_status("DONE", "Signature(s) Imported.")
 
-                except SkipSource:
-                    # This source hasn't changed, no need to re-import into Assemblyline
-                    self.log.info(f'No new {self.updater_type} rule files to process for {source_name}')
-                    if source_name in previous_hashes:
-                        files_sha256[source_name] = previous_hashes[source_name]
-                    self.push_status("DONE", "Skipped.")
-                except Exception as e:
-                    self.push_status("ERROR", str(e))
-                    continue
+                    except SkipSource:
+                        # This source hasn't changed, no need to re-import into Assemblyline
+                        self.log.info(f'No new {self.updater_type} rule files to process for {source_name}')
+                        if source_name in previous_hashes:
+                            files_sha256[source_name] = previous_hashes[source_name]
+                        self.push_status("DONE", "Skipped.")
+                    except Exception as e:
+                        self.push_status("ERROR", str(e))
+                        continue
 
-                self.set_source_update_time(run_time)
-                self.set_source_extra(files_sha256)
+                    self.set_source_update_time(run_time)
+                    self.set_source_extra(files_sha256)
         self.set_active_config_hash(self.config_hash(service))
         self.local_update_flag.set()
 
