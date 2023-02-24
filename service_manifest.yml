@@ -67,3 +67,6 @@ update_config:
     # - name: NSRL_android
     #   pattern: NSRLFile.txt
     #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/RDS_android.iso
+    # - name: NSRL_legacy
+    #   pattern: NSRLFile.txt
+    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/RDS_legacy.iso
