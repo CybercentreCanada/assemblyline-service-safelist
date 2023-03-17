@@ -1,7 +1,9 @@
 import csv
+import math
 import os
 import pycdlib
 import requests
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -12,10 +14,14 @@ from assemblyline_client import get_client, Client
 from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
 from assemblyline_v4_service.updater.helper import add_cacert, BLOCK_SIZE, SkipSource, urlparse
 
+from datetime import datetime
+
 
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
 UI_SERVER_CA = os.environ.get('AL_ROOT_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
 HASH_LEN = 1000
+
+APPLICATION_TYPE_BLOCKLIST = []
 
 
 def url_download(source, previous_update=None, logger=None, output_dir=None):
@@ -143,6 +149,19 @@ def extract_safelist(file, pattern, logger):
     logger.info(f'Extraction complete: {safelist_file}')
     os.unlink(file)
 
+    if safelist_file.endswith('.db'):
+        with tempfile.NamedTemporaryFile('w', delete=False) as csv:
+            # Assume this is a NSRL SQL DB
+            with sqlite3.connect(safelist_file) as db:
+                # Include expected header for CSV format
+                csv.write("SHA-256,SHA-1,MD5,Filename,Filesize")
+                for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, PKG.application_type FROM FILE JOIN PKG USING (package_id)"):
+                    if r[-1] not in APPLICATION_TYPE_BLOCKLIST:
+                        csv.write(','.join(r[:-1]))
+            csv.flush()
+            os.unlink(safelist_file)
+            safelist_file = csv.name
+
     return safelist_file
 
 
@@ -165,13 +184,13 @@ class SafelistUpdateServer(ServiceUpdater):
                 return 0
 
             for line in reader:
-                sha1, md5, _, filename, size = line[:5]
+                sha256, sha1, md5, filename, size = line[:5]
                 if sha1 == "SHA-1":
                     continue
 
                 data = {
                     "file": {"name": [filename], "size": size},
-                    "hashes": {"md5": md5.lower(), "sha1": sha1.lower()},
+                    "hashes": {"md5": md5.lower(), "sha1": sha1.lower(), "sha256": sha256.lower()},
                     "sources": [
                         {"name": source_name,
                             'type': 'external',
@@ -223,7 +242,13 @@ class SafelistUpdateServer(ServiceUpdater):
                 source = source_obj.as_primitives()
                 uri: str = source['uri']
                 self.log.info(f"Processing source: {source['name'].upper()}")
-                download_name = os.path.basename(uri)
+
+                if "${QUARTERLY}" in uri:
+                    y, m = datetime.now().strftime("%Y.%m").split('.')
+                    d = 1
+                    m = "%02d" % (math.floor(float(int(m)/3))*3)
+                    source['uri'] = source['uri'].replace("${QUARTERLY}", f"{y}.{m}.{d}")
+                    source['pattern'] = source['pattern'].replace("${QUARTERLY}", f"{y}.{m}.{d}")
 
                 with tempfile.TemporaryDirectory() as update_dir:
                     try:
