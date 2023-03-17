@@ -154,10 +154,10 @@ def extract_safelist(file, pattern, logger):
             # Assume this is a NSRL SQL DB
             with sqlite3.connect(safelist_file) as db:
                 # Include expected header for CSV format
-                csv.write("SHA-256,SHA-1,MD5,Filename,Filesize")
+                csv.write("SHA-256,SHA-1,MD5,Filename,Filesize\n")
                 for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, PKG.application_type FROM FILE JOIN PKG USING (package_id)"):
                     if r[-1] not in APPLICATION_TYPE_BLOCKLIST:
-                        csv.write(','.join([str(i) for i in r[:-1]]))
+                        csv.write(','.join([str(i) for i in r[:-1]]) + "\n")
             csv.flush()
             os.unlink(safelist_file)
             safelist_file = csv.name
