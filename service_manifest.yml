@@ -57,7 +57,7 @@ update_config:
   update_interval_seconds: 86400
   wait_for_update: false
   generates_signatures: false
-  sources:
+  sources: []
     # We will not force a safelist onto our users.
     # Here are examples of NSRL sources that are working with the updater:
     # - name: NSRL_modern
