@@ -157,7 +157,7 @@ def extract_safelist(file, pattern, logger):
                 csv.write("SHA-256,SHA-1,MD5,Filename,Filesize\n")
                 for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, PKG.application_type FROM FILE JOIN PKG USING (package_id)"):
                     if r[-1] not in APPLICATION_TYPE_BLOCKLIST:
-                        csv.write(','.join([str(i) for i in r[:-1]]) + "\n")
+                        csv.write(','.join([str(i).strip() for i in r[:-1]]) + "\n")
             csv.flush()
             os.unlink(safelist_file)
             safelist_file = csv.name
@@ -184,7 +184,7 @@ class SafelistUpdateServer(ServiceUpdater):
                 return 0
 
             for line in reader:
-                sha256, sha1, md5, filename, size = line[:5]
+                sha256, sha1, md5, filename, size = line
                 if sha1 == "SHA-1":
                     continue
 
