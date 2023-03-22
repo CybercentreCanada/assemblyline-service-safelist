@@ -23,6 +23,8 @@ config:
   lookup_md5: false
   lookup_sha1: true
   lookup_sha256: true
+  safe_application_types:
+    - Operating System
 
 docker_config:
   image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG

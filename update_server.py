@@ -21,8 +21,6 @@ UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
 UI_SERVER_CA = os.environ.get('AL_ROOT_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
 HASH_LEN = 1000
 
-APPLICATION_TYPE_BLOCKLIST = []
-
 
 def url_download(source, previous_update=None, logger=None, output_dir=None):
     """
@@ -118,7 +116,7 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
         session.close()
 
 
-def extract_safelist(file, pattern, logger):
+def extract_safelist(file, pattern, logger, safe_application_types=[]):
     logger.info(f'Extracting safelist file from {file}')
     dir = os.path.dirname(file)
     try:
@@ -156,7 +154,7 @@ def extract_safelist(file, pattern, logger):
                 # Include expected header for CSV format
                 csv.write("SHA-256,SHA-1,MD5,Filename,Filesize\n")
                 for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, PKG.application_type FROM FILE JOIN PKG USING (package_id)"):
-                    if r[-1] not in APPLICATION_TYPE_BLOCKLIST:
+                    if r[-1] in safe_application_types:
                         csv.write(','.join([str(i).strip() for i in r[:-1]]) + "\n")
             csv.flush()
             os.unlink(safelist_file)
@@ -184,7 +182,7 @@ class SafelistUpdateServer(ServiceUpdater):
                 return 0
 
             for line in reader:
-                sha256, sha1, md5, filename, size = line
+                sha256, sha1, md5, filename, size = line[:5]
                 if sha1 == "SHA-1":
                     continue
 
@@ -257,7 +255,8 @@ class SafelistUpdateServer(ServiceUpdater):
                         file = url_download(source=source, previous_update=old_update_time, logger=self.log,
                                             output_dir=update_dir)
 
-                        file = extract_safelist(file, source['pattern'], self.log)
+                        file = extract_safelist(file, source['pattern'], self.log,
+                                                self._service.config.get('safe_application_types', []))
                         # Add to collection of sources for caching purposes
                         self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
                         previous_hashes[source_name] = {file: get_sha256_for_file(file)}
