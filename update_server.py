@@ -147,18 +147,23 @@ def extract_safelist(file, pattern, logger, safe_application_types=[]):
     logger.info(f'Extraction complete: {safelist_file}')
     os.unlink(file)
 
-    if safelist_file.endswith('.db'):
-        with tempfile.NamedTemporaryFile('w', delete=False) as csv:
-            # Assume this is a NSRL SQL DB
-            with sqlite3.connect(safelist_file) as db:
-                # Include expected header for CSV format
-                csv.write("SHA-256,SHA-1,MD5,Filename,Filesize\n")
-                for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, PKG.application_type FROM FILE JOIN PKG USING (package_id)"):
-                    if r[-1] in safe_application_types:
-                        csv.write(','.join([str(i).strip() for i in r[:-1]]) + "\n")
-            csv.flush()
-            os.unlink(safelist_file)
-            safelist_file = csv.name
+    try:
+        if safelist_file.endswith('.db'):
+            with tempfile.NamedTemporaryFile('w', delete=False) as csv:
+                # Assume this is a NSRL SQL DB
+                with sqlite3.connect(safelist_file) as db:
+                    # Include expected header for CSV format
+                    csv.write("SHA-256,SHA-1,MD5,Filename,Filesize\n")
+                    for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, PKG.application_type FROM FILE JOIN PKG USING (package_id)"):
+                        if r[-1] in safe_application_types:
+                            csv.write(','.join([str(i).strip() for i in r[:-1]]) + "\n")
+                csv.flush()
+                os.unlink(safelist_file)
+                safelist_file = csv.name
+    except Exception:
+        raise
+    finally:
+        os.unlink(safelist_file)
 
     return safelist_file
 
