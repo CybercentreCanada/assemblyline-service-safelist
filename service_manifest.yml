@@ -29,6 +29,7 @@ config:
     - "^Google.*"
     - "^Canonical.*"
     - "^Red Hat.*"
+    - "^Oracle.*"
 docker_config:
   image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
   cpu_cores: 0.4
