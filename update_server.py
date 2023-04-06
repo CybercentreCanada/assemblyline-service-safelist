@@ -2,6 +2,7 @@ import csv
 import math
 import os
 import pycdlib
+import re
 import requests
 import sqlite3
 import subprocess
@@ -116,7 +117,7 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
         session.close()
 
 
-def extract_safelist(file, pattern, logger, safe_application_types=[]):
+def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
     logger.info(f'Extracting safelist file from {file}')
     dir = os.path.dirname(file)
     try:
@@ -147,6 +148,7 @@ def extract_safelist(file, pattern, logger, safe_application_types=[]):
     logger.info(f'Extraction complete: {safelist_file}')
     os.unlink(file)
 
+    safe_distributors_list_regex = '|'.join(safe_distributors_list) if safe_distributors_list else None
     try:
         if safelist_file.endswith('.db'):
             with tempfile.NamedTemporaryFile('w', delete=False) as csv:
@@ -154,9 +156,16 @@ def extract_safelist(file, pattern, logger, safe_application_types=[]):
                 with sqlite3.connect(safelist_file) as db:
                     # Include expected header for CSV format
                     csv.write("SHA-256,SHA-1,MD5,Filename,Filesize\n")
-                    for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, PKG.application_type FROM FILE JOIN PKG USING (package_id)"):
-                        if r[-1] in safe_application_types:
-                            csv.write(','.join([str(i).strip() for i in r[:-1]]) + "\n")
+                    for r in db.execute("SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size, FILE.package_id FROM FILE"):
+                        file_info, pkg_id = r[:-1], r[-1]
+                        if not safe_distributors_list_regex:
+                            # We want to add every file hash
+                            csv.write(','.join([str(i).strip() for i in file_info]) + "\n")
+                        else:
+                            mfg = [r[0] for r in db.execute(f"SELECT MFG.name FROM PKG JOIN MFG USING (manufacturer_id) WHERE PKG.package_id='{pkg_id}'")][0]
+                            if re.match(safe_distributors_list_regex, mfg):
+                                # We want to be selective of which file hash to add
+                                csv.write(','.join([str(i).strip() for i in file_info]) + "\n")
                 csv.flush()
                 os.unlink(safelist_file)
                 safelist_file = csv.name
@@ -189,6 +198,7 @@ class SafelistUpdateServer(ServiceUpdater):
             for line in reader:
                 sha256, sha1, md5, filename, size = line[:5]
                 if sha1 == "SHA-1":
+                    # Assume this is a header for a CSV and move onto next line
                     continue
 
                 data = {
@@ -261,7 +271,7 @@ class SafelistUpdateServer(ServiceUpdater):
                                             output_dir=update_dir)
 
                         file = extract_safelist(file, source['pattern'], self.log,
-                                                self._service.config.get('safe_application_types', []))
+                                                self._service.config.get('trusted_distributors', []))
                         # Add to collection of sources for caching purposes
                         self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
                         previous_hashes[source_name] = {file: get_sha256_for_file(file)}

@@ -19,3 +19,17 @@ SHA-256,SHA-1,MD5,Filename,Filesize
 ```
 
 Note that we're expecting a header as the first line of the CSV file.
+
+## Trusted Distributors
+Because we can't necessarily trust all the hashes that come from NSRL, we've elected to use the distributor
+as a means of defining what files are deemed safe. To simplify this, you can use regex to set what distributors to trust.
+
+For example, if I want to trust anything from 2K, I would set in the service manifest:
+```yaml
+config:
+  ...
+  trusted_distributors:
+    - ^2K.* # This will capture 2K, 2K Australia, etc.
+```
+
+For a complete list of manufacturers, you can run `SELECT name FROM MFG` on each RDSv3 table from NSRL.
