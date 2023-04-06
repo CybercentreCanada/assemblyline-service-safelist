@@ -168,9 +168,8 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
                 os.unlink(safelist_file)
                 safelist_file = csv.name
     except Exception:
-        raise
-    finally:
         os.unlink(safelist_file)
+        raise
 
     return safelist_file
 
