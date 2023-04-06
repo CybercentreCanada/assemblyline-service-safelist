@@ -160,7 +160,7 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
                     if safe_distributors_list_regex:
                         # Retrieve the list of package_ids associated to each manufacturer
                         logger.info(f'Retrieving package_ids that belong to the following distributor pattern: {safe_distributors_list_regex}')
-                        package_ids = [str(r[1]) for r in db.execute("SELECT MFG.name, PKG.package_id FROM PKG JOIN MFG USING (manufacturer_id)") if re.match(pattern, r[0])]
+                        package_ids = [str(r[1]) for r in db.execute("SELECT MFG.name, PKG.package_id FROM PKG JOIN MFG USING (manufacturer_id)") if re.match(safe_distributors_list_regex, r[0])]
                         package_filter = f"WHERE FILE.package_id IN ({', '.join(package_ids)})"
                     for r in db.execute(f"SELECT DISTINCT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size FROM FILE {package_filter}"):
                         csv.write(','.join([str(i).strip() for i in r]) + "\n")
@@ -193,7 +193,14 @@ class SafelistUpdateServer(ServiceUpdater):
                 return 0
 
             for line in reader:
-                sha256, sha1, md5, filename, size = line[:5]
+                if len(line) == 5:
+                    # No commas in filename
+                    sha256, sha1, md5, filename, size = line[:5]
+                else:
+                    # Commas found in filename, preserve this in safelist
+                    sha256, sha1, md5 = line[:3]
+                    filename = ','.join(line[3:-1])
+                    size = line[-1]
                 if sha1 == "SHA-1":
                     # Assume this is a header for a CSV and move onto next line
                     continue
