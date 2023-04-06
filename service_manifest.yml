@@ -23,9 +23,12 @@ config:
   lookup_md5: false
   lookup_sha1: true
   lookup_sha256: true
-  safe_application_types:
-    - Operating System
-
+  trusted_distributors:
+    - "^Apple.*"
+    - "^Microsoft.*"
+    - "^Google.*"
+    - "^Canonical.*"
+    - "^Red Hat.*"
 docker_config:
   image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
   cpu_cores: 0.4
