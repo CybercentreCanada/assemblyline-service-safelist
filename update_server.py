@@ -162,7 +162,7 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
                         logger.info(f'Retrieving package_ids that belong to the following distributor pattern: {safe_distributors_list_regex}')
                         package_ids = [str(r[1]) for r in db.execute("SELECT MFG.name, PKG.package_id FROM PKG JOIN MFG USING (manufacturer_id)") if re.match(pattern, r[0])]
                         package_filter = f"WHERE FILE.package_id IN ({', '.join(package_ids)})"
-                    for r in db.execute(f"SELECT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size FROM FILE {package_filter}"):
+                    for r in db.execute(f"SELECT DISTINCT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size FROM FILE {package_filter}"):
                         csv.write(','.join([str(i).strip() for i in r]) + "\n")
                 csv.flush()
                 os.unlink(safelist_file)
