@@ -23,7 +23,13 @@ config:
   lookup_md5: false
   lookup_sha1: true
   lookup_sha256: true
-
+  trusted_distributors:
+    - "^Apple.*"
+    - "^Microsoft.*"
+    - "^Google.*"
+    - "^Canonical.*"
+    - "^Red Hat.*"
+    - "^Oracle.*"
 docker_config:
   image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
   cpu_cores: 0.4
@@ -49,24 +55,26 @@ dependencies:
       image: ${REGISTRY}cccs/assemblyline-service-safelist:$SERVICE_TAG
       ports: ["5003"]
       # Upper-bound, adjust based on sources
-      # cpu_cores: 2
-      # ram_mb: 4096
+      cpu_cores: 2
+      ram_mb: 4096
     run_as_core: True
 
 update_config:
   update_interval_seconds: 86400
   wait_for_update: false
   generates_signatures: false
-  sources:
-    []
+  sources: []
     # We will not force a safelist onto our users.
     # Here are examples of NSRL sources that are working with the updater:
-    # - name: NSRL_modernm
-    #   pattern: rds_modernm/NSRLFile.txt
-    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/rds_modernm.zip
-    # - name: NSRL_android
-    #   pattern: NSRLFile.txt
-    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/RDS_android.iso
+    # - name: NSRL_modern
+    #   pattern: RDS_${QUARTERLY}_modern_minimal/RDS_${QUARTERLY}_modern_minimal.db
+    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_${QUARTERLY}/RDS_${QUARTERLY}_modern_minimal.zip
     # - name: NSRL_legacy
-    #   pattern: NSRLFile.txt
-    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/current/RDS_legacy.iso
+    #   pattern: RDS_${QUARTERLY}_legacy_minimal/RDS_${QUARTERLY}_legacy_minimal.db
+    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_${QUARTERLY}/RDS_${QUARTERLY}_legacy_minimal.zip
+    # - name: NSRL_android
+    #   pattern: RDS_${QUARTERLY}_android_minimal/RDS_${QUARTERLY}_android_minimal.db
+    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_${QUARTERLY}/RDS_${QUARTERLY}_android_minimal.zip
+    # - name: NSRL_ios
+    #   pattern: RDS_${QUARTERLY}_ios_minimal/RDS_${QUARTERLY}_ios_minimal.db
+    #   uri: https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_${QUARTERLY}/RDS_${QUARTERLY}_ios_minimal.zip

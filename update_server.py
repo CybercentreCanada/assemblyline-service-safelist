@@ -1,7 +1,10 @@
 import csv
+import math
 import os
 import pycdlib
+import re
 import requests
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -11,6 +14,8 @@ from assemblyline.odm.models.service import Service, UpdateSource
 from assemblyline_client import get_client, Client
 from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
 from assemblyline_v4_service.updater.helper import add_cacert, BLOCK_SIZE, SkipSource, urlparse
+
+from datetime import datetime
 
 
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
@@ -112,7 +117,7 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
         session.close()
 
 
-def extract_safelist(file, pattern, logger):
+def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
     logger.info(f'Extracting safelist file from {file}')
     dir = os.path.dirname(file)
     try:
@@ -143,6 +148,29 @@ def extract_safelist(file, pattern, logger):
     logger.info(f'Extraction complete: {safelist_file}')
     os.unlink(file)
 
+    safe_distributors_list_regex = '|'.join(safe_distributors_list) if safe_distributors_list else None
+    try:
+        if safelist_file.endswith('.db'):
+            with tempfile.NamedTemporaryFile('w', delete=False) as csv:
+                # Assume this is a NSRL SQL DB
+                with sqlite3.connect(safelist_file) as db:
+                    # Include expected header for CSV format
+                    csv.write("SHA-256,SHA-1,MD5,Filename,Filesize\n")
+                    package_filter = ""
+                    if safe_distributors_list_regex:
+                        # Retrieve the list of package_ids associated to each manufacturer
+                        logger.info(f'Retrieving package_ids that belong to the following distributor pattern: {safe_distributors_list_regex}')
+                        package_ids = [str(r[1]) for r in db.execute("SELECT MFG.name, PKG.package_id FROM PKG JOIN MFG USING (manufacturer_id)") if re.match(safe_distributors_list_regex, r[0])]
+                        package_filter = f"WHERE FILE.package_id IN ({', '.join(package_ids)})"
+                    for r in db.execute(f"SELECT DISTINCT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size FROM FILE {package_filter}"):
+                        csv.write(','.join([str(i).strip() for i in r]) + "\n")
+                csv.flush()
+                os.unlink(safelist_file)
+                safelist_file = csv.name
+    except Exception:
+        os.unlink(safelist_file)
+        raise
+
     return safelist_file
 
 
@@ -165,13 +193,21 @@ class SafelistUpdateServer(ServiceUpdater):
                 return 0
 
             for line in reader:
-                sha1, md5, _, filename, size = line[:5]
+                if len(line) == 5:
+                    # No commas in filename
+                    sha256, sha1, md5, filename, size = line[:5]
+                else:
+                    # Commas found in filename, preserve this in safelist
+                    sha256, sha1, md5 = line[:3]
+                    filename = ','.join(line[3:-1])
+                    size = line[-1]
                 if sha1 == "SHA-1":
+                    # Assume this is a header for a CSV and move onto next line
                     continue
 
                 data = {
                     "file": {"name": [filename], "size": size},
-                    "hashes": {"md5": md5.lower(), "sha1": sha1.lower()},
+                    "hashes": {"md5": md5.lower(), "sha1": sha1.lower(), "sha256": sha256.lower()},
                     "sources": [
                         {"name": source_name,
                             'type': 'external',
@@ -223,7 +259,13 @@ class SafelistUpdateServer(ServiceUpdater):
                 source = source_obj.as_primitives()
                 uri: str = source['uri']
                 self.log.info(f"Processing source: {source['name'].upper()}")
-                download_name = os.path.basename(uri)
+
+                if "${QUARTERLY}" in uri:
+                    y, m = datetime.now().strftime("%Y.%m").split('.')
+                    d = 1
+                    m = "%02d" % (math.floor(float(int(m)/3))*3)
+                    source['uri'] = source['uri'].replace("${QUARTERLY}", f"{y}.{m}.{d}")
+                    source['pattern'] = source['pattern'].replace("${QUARTERLY}", f"{y}.{m}.{d}")
 
                 with tempfile.TemporaryDirectory() as update_dir:
                     try:
@@ -232,7 +274,8 @@ class SafelistUpdateServer(ServiceUpdater):
                         file = url_download(source=source, previous_update=old_update_time, logger=self.log,
                                             output_dir=update_dir)
 
-                        file = extract_safelist(file, source['pattern'], self.log)
+                        file = extract_safelist(file, source['pattern'], self.log,
+                                                self._service.config.get('trusted_distributors', []))
                         # Add to collection of sources for caching purposes
                         self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
                         previous_hashes[source_name] = {file: get_sha256_for_file(file)}
