@@ -206,15 +206,27 @@ class SafelistUpdateServer(ServiceUpdater):
                     continue
 
                 data = {
-                    "file": {"name": [filename], "size": size},
-                    "hashes": {"md5": md5.lower(), "sha1": sha1.lower(), "sha256": sha256.lower()},
+                    "file": {},
+                    "hashes": {},
                     "sources": [
                         {"name": source_name,
                             'type': 'external',
-                            "reason": [f"Exist in source as {filename}"]}
+                            "reason": ["Exists in source"]}
                     ],
                     'type': "file"
                 }
+                if md5:
+                    data['hashes']['md5'] = md5.lower()
+                if sha1:
+                    data['hashes']['sha1'] = sha1.lower()
+                if sha256:
+                    data['hashes']['sha256'] = sha256.lower()
+                if size:
+                    data['file']['size'] = size
+                if filename:
+                    data['file']['name'] = [filename]
+                    data['sources'][0]['reason'] = [f"Exists in source as {filename}"]
+
                 hash_list.append(data)
 
                 if len(hash_list) % HASH_LEN == 0:
