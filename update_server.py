@@ -232,7 +232,7 @@ class SafelistUpdateServer(ServiceUpdater):
                         data['file']['name'] = [filename]
                         data['sources'][0]['reason'] = [f"Exists in source as {filename}"]
                 except Exception as e:
-                    self.log.warning(f'An error occured while preparing a safelisted metadata about a file using [{line}]: {e}. Skipping..')
+                    self.log.warning(f'An error occurred while preparing a safelisted metadata about a file using [{line}]: {e}. Skipping..')
                     continue
 
                 hash_list.append(data)
