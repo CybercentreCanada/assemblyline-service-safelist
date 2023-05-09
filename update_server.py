@@ -163,6 +163,10 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
                         package_ids = [str(r[1]) for r in db.execute("SELECT MFG.name, PKG.package_id FROM PKG JOIN MFG USING (manufacturer_id)") if re.match(safe_distributors_list_regex, r[0])]
                         package_filter = f"WHERE FILE.package_id IN ({', '.join(package_ids)})"
                     for r in db.execute(f"SELECT DISTINCT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size FROM FILE {package_filter}"):
+                        if not len(r) == 5:
+                            # We're falling short of expectations, raise a warning about the row and continue
+                            logger.warning(f"Expected 5 items but got: {r}. Skipping row..")
+                            continue
                         csv.write(','.join([str(i).strip() for i in r]) + "\n")
                 csv.flush()
                 os.unlink(safelist_file)
@@ -193,39 +197,43 @@ class SafelistUpdateServer(ServiceUpdater):
                 return 0
 
             for line in reader:
-                if len(line) == 5:
-                    # No commas in filename
-                    sha256, sha1, md5, filename, size = line[:5]
-                else:
-                    # Commas found in filename, preserve this in safelist
-                    sha256, sha1, md5 = line[:3]
-                    filename = ','.join(line[3:-1])
-                    size = line[-1]
-                if sha1 == "SHA-1":
-                    # Assume this is a header for a CSV and move onto next line
-                    continue
+                try:
+                    if len(line) == 5:
+                        # No commas in filename
+                        sha256, sha1, md5, filename, size = line[:5]
+                    else:
+                        # Commas found in filename, preserve this in safelist
+                        sha256, sha1, md5 = line[:3]
+                        filename = ','.join(line[3:-1])
+                        size = line[-1]
+                    if sha1 == "SHA-1":
+                        # Assume this is a header for a CSV and move onto next line
+                        continue
 
-                data = {
-                    "file": {},
-                    "hashes": {},
-                    "sources": [
-                        {"name": source_name,
-                            'type': 'external',
-                            "reason": ["Exists in source"]}
-                    ],
-                    'type': "file"
-                }
-                if md5:
-                    data['hashes']['md5'] = md5.lower()
-                if sha1:
-                    data['hashes']['sha1'] = sha1.lower()
-                if sha256:
-                    data['hashes']['sha256'] = sha256.lower()
-                if size:
-                    data['file']['size'] = size
-                if filename:
-                    data['file']['name'] = [filename]
-                    data['sources'][0]['reason'] = [f"Exists in source as {filename}"]
+                    data = {
+                        "file": {},
+                        "hashes": {},
+                        "sources": [
+                            {"name": source_name,
+                                'type': 'external',
+                                "reason": ["Exists in source"]}
+                        ],
+                        'type': "file"
+                    }
+                    if md5:
+                        data['hashes']['md5'] = md5.lower()
+                    if sha1:
+                        data['hashes']['sha1'] = sha1.lower()
+                    if sha256:
+                        data['hashes']['sha256'] = sha256.lower()
+                    if size:
+                        data['file']['size'] = size
+                    if filename:
+                        data['file']['name'] = [filename]
+                        data['sources'][0]['reason'] = [f"Exists in source as {filename}"]
+                except Exception as e:
+                    self.log.warning(f'An error occurred while preparing a safelisted metadata about a file using [{line}]: {e}. Skipping..')
+                    continue
 
                 hash_list.append(data)
 
