@@ -6,6 +6,7 @@ import re
 import requests
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -22,6 +23,8 @@ from datetime import datetime
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
 UI_SERVER_CA = os.environ.get('AL_ROOT_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
 HASH_LEN = 1000
+
+csv.field_size_limit(sys.maxsize)
 
 
 def url_download(source, previous_update=None, logger=None, output_dir=None):
