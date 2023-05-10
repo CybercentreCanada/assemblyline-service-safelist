@@ -10,6 +10,7 @@ import tempfile
 import time
 
 from assemblyline.common.digests import get_sha256_for_file
+from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
 from assemblyline_client import get_client, Client
 from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
@@ -167,7 +168,7 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
                             # We're falling short of expectations, raise a warning about the row and continue
                             logger.warning(f"Expected 5 items but got: {r}. Skipping row..")
                             continue
-                        csv.write(','.join([str(i).strip() for i in r]) + "\n")
+                        csv.write(','.join([safe_str(i, force_str=True) for i in r]) + "\n")
                 csv.flush()
                 os.unlink(safelist_file)
                 safelist_file = csv.name
