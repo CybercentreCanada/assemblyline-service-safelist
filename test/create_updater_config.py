@@ -1,4 +1,5 @@
 import os
+
 import yaml
 
 SERVICE_MANIFEST = "../service_manifest.yml"
