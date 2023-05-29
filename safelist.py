@@ -1,5 +1,5 @@
 
-from assemblyline.common.isotime import now, epoch_to_iso
+from assemblyline.common.isotime import epoch_to_iso, now
 from assemblyline_v4_service.common.base import ServiceBase
 from assemblyline_v4_service.common.result import Heuristic, Result, ResultSection
 

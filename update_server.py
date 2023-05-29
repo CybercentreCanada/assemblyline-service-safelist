@@ -1,24 +1,22 @@
 import csv
 import math
 import os
-import pycdlib
 import re
-import requests
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 
+import pycdlib
+import requests
 from assemblyline.common.digests import get_sha256_for_file
 from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
-from assemblyline_client import get_client, Client
+from assemblyline_client import Client, get_client
+from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, urlparse
 from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
-from assemblyline_v4_service.updater.helper import add_cacert, BLOCK_SIZE, SkipSource, urlparse
-
-from datetime import datetime
-
 
 UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
 UI_SERVER_CA = os.environ.get('AL_ROOT_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
