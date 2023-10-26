@@ -1,7 +1,10 @@
 
+from assemblyline.common import forge
 from assemblyline.common.isotime import epoch_to_iso, now
 from assemblyline_v4_service.common.base import ServiceBase
 from assemblyline_v4_service.common.result import Heuristic, Result, ResultSection
+
+classification = forge.get_classification()
 
 
 class Safelist(ServiceBase):
@@ -48,7 +51,8 @@ class Safelist(ServiceBase):
                     result.add_section(
                         ResultSection(
                             msg, heuristic=Heuristic(heur_id, signature=f"SAFELIST_{qhash}"),
-                            body="\n".join(source['reason'])))
+                            body="\n".join(source['reason']),
+                            classification=data.get('classification', classification.UNRESTRICTED)))
 
                 # Stop processing, the file is safe
                 request.drop()
