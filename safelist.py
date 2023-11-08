@@ -1,4 +1,5 @@
 
+import hashlib
 from assemblyline.common import forge
 from assemblyline.common.isotime import epoch_to_iso, now
 from assemblyline_v4_service.common.base import ServiceBase
@@ -35,26 +36,43 @@ class Safelist(ServiceBase):
         if self.config.get('lookup_md5', False):
             hashes.append(request.md5)
 
+        if request.file_type.startswith("uri/") and request.task.fileinfo.uri_info:
+            for analytic_type in ['static', 'dynamic']:
+                hashed_value = f"network.{analytic_type}.uri: {request.task.fileinfo.uri_info.uri}".encode('utf8')
+                hashes.append(hashlib.sha256(hashed_value).hexdigest())
+
         for qhash in hashes:
             data = self.api_interface.lookup_safelist(qhash)
-            if data and data['enabled'] and data['type'] == "file":
-                # Create a section per source
-                for source in data['sources']:
-                    if source['type'] == 'user':
-                        msg = f"User {source['name']} deemed this file as safe for the following reason(s):"
-                        heur_id = 2
-                    else:
-                        msg = f"External safelist source {source['name']} deems this file as safe " \
-                            "for the following reason(s):"
-                        heur_id = 1
+            if data and data['enabled']:
+                # Check the type of hit we got
+                is_file = False
+                is_uri = False
+                safe_type = "unknown"
+                if data['type'] == "file":
+                    is_file = True
+                    safe_type = "file"
+                if data['type'] == "tag" and data['tag']['type'] in ['network.static.uri', 'network.dynamic.uri']:
+                    is_uri = True
+                    safe_type = "URI"
 
-                    result.add_section(
-                        ResultSection(
-                            msg, heuristic=Heuristic(heur_id, signature=f"SAFELIST_{qhash}"),
-                            body="\n".join(source['reason']),
-                            classification=data.get('classification', classification.UNRESTRICTED)))
+                if is_file or is_uri:
+                    # Create a section per source
+                    for source in data['sources']:
+                        if source['type'] == 'user':
+                            msg = f"User {source['name']} deemed this {safe_type} as safe for the following reason(s):"
+                            heur_id = 2
+                        else:
+                            msg = f"External safelist source {source['name']} deems this {safe_type} as safe " \
+                                "for the following reason(s):"
+                            heur_id = 1
 
-                # Stop processing, the file is safe
-                request.drop()
+                        result.add_section(
+                            ResultSection(
+                                msg, heuristic=Heuristic(heur_id, signature=f"SAFELIST_{qhash}"),
+                                body="\n".join(source['reason']),
+                                classification=data.get('classification', classification.UNRESTRICTED)))
+
+                    # Stop processing, the file is safe
+                    request.drop()
 
         request.result = result
