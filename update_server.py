@@ -7,16 +7,21 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime
 
 import pycdlib
 import requests
 from assemblyline.common.digests import get_sha256_for_file
 from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
-from assemblyline_client import Client, get_client
-from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, urlparse
-from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
+from assemblyline_v4_service.updater.client import Client4, get_client
+from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, git_clone_repo, urlparse
+from assemblyline_v4_service.updater.updater import (
+    SOURCE_UPDATE_ATTEMPT_DELAY_BASE,
+    SOURCE_UPDATE_ATTEMPT_MAX_RETRY,
+    ServiceUpdater,
+    classification,
+    temporary_api_key,
+)
 
 UI_SERVER = os.getenv("UI_SERVER", "https://nginx")
 UI_SERVER_CA = os.environ.get("AL_ROOT_CA", "/etc/assemblyline/ssl/al_root-ca.crt")
@@ -194,7 +199,7 @@ class SafelistUpdateServer(ServiceUpdater):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def import_update(self, file_path, client: Client, source_name: str, default_classification=None):
+    def import_update(self, file_path, client: Client4, source_name: str, default_classification=None):
         success = 0
         with open(file_path) as fh:
             reader = csv.reader(fh, delimiter=",", quotechar='"')
@@ -261,73 +266,107 @@ class SafelistUpdateServer(ServiceUpdater):
     def do_local_update(self) -> None:
         pass
 
-    def do_source_update(self, service: Service, specific_sources: list[str] = []) -> None:
+    def do_source_update(self, service: Service) -> None:
         self.log.info(f"Connecting to Assemblyline API: {UI_SERVER}...")
         run_time = time.time()
         username = self.ensure_service_account()
         with temporary_api_key(self.datastore, username) as api_key:
-            verify = None if not os.path.exists(UI_SERVER_CA) else UI_SERVER_CA
-            client = get_client(UI_SERVER, apikey=(username, api_key), verify=verify)
-            self.log.info("Connected!")
+            with tempfile.TemporaryDirectory() as update_dir:
+                al_client = get_client(
+                    UI_SERVER, apikey=(username, api_key), verify=self.verify, datastore=self.datastore
+                )
+                self.log.info("Connected!")
 
-            # Parse updater configuration
-            previous_hashes: dict[str, dict[str, str]] = self.get_source_extra()
-            sources: dict[str, UpdateSource] = {_s["name"]: _s for _s in service.update_config.sources}
-            files_sha256: dict[str, dict[str, str]] = {}
+                # Parse updater configuration
+                previous_hashes: dict[str, dict[str, str]] = self.get_source_extra()
+                sources: dict[str, UpdateSource] = {_s["name"]: _s for _s in service.update_config.sources}
+                files_sha256: dict[str, dict[str, str]] = {}
 
-            # Go through each source and download file
-            for source_name, source_obj in sources.items():
-                # Set current source for pushing state to UI
-                self._current_source = source_name
-                old_update_time = self.get_source_update_time()
-                if specific_sources and source_name not in specific_sources:
-                    # Parameter is used to determine if you want to update a specific source only
-                    # Otherwise, assume we want to update all sources
-                    continue
+                # Map already visited URIs to download paths (avoid re-cloning/re-downloads)
+                seen_fetches = dict()
 
-                self.push_status("UPDATING", "Starting..")
-                source = source_obj.as_primitives()
-                uri: str = source["uri"]
-                self.log.info(f"Processing source: {source['name'].upper()}")
+                # Go through each source queued and download file
+                while self.update_queue.qsize():
+                    update_attempt = -1
+                    source_name = self.update_queue.get()
+                    while update_attempt < SOURCE_UPDATE_ATTEMPT_MAX_RETRY:
+                        # Introduce an exponential delay between each attempt
+                        time.sleep(SOURCE_UPDATE_ATTEMPT_DELAY_BASE**update_attempt)
+                        update_attempt += 1
 
-                if "${QUARTERLY}" in uri:
-                    y, m = datetime.now().strftime("%Y.%m").split(".")
-                    d = 1
-                    m = "%02d" % (math.floor(float(int(m) / 3)) * 3)
-                    source["uri"] = source["uri"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
-                    source["pattern"] = source["pattern"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
+                        # Set current source for pushing state to UI
+                        self._current_source = source_name
+                        source_obj = sources[source_name]
+                        old_update_time = self.get_source_update_time()
 
-                with tempfile.TemporaryDirectory() as update_dir:
-                    try:
-                        self.push_status("UPDATING", "Pulling..")
-                        # Pull sources from external locations (method depends on the URL)
-                        file = url_download(
-                            source=source, previous_update=old_update_time, logger=self.log, output_dir=update_dir
-                        )
+                        self.push_status("UPDATING", "Starting..")
+                        source = source_obj.as_primitives()
+                        uri: str = source["uri"]
+                        default_classification = source.get("default_classification", classification.UNRESTRICTED)
+                        # Enable signature syncing if the source specifies it
+                        al_client.signature.sync = source.get("sync", False)
 
-                        file = extract_safelist(
-                            file, source["pattern"], self.log, self._service.config.get("trusted_distributors", [])
-                        )
-                        # Add to collection of sources for caching purposes
-                        self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
-                        previous_hashes[source_name] = {file: get_sha256_for_file(file)}
-                        # Import into Assemblyline
-                        self.push_status("UPDATING", "Importing..")
-                        self.import_update(file, client, source_name)
-                        self.push_status("DONE", "Signature(s) Imported.")
+                        try:
+                            self.push_status("UPDATING", "Pulling..")
+                            output = None
+                            seen_fetch = seen_fetches.get(uri)
+                            if seen_fetch == "skipped":
+                                # Skip source if another source says nothing has changed
+                                raise SkipSource
+                            elif seen_fetch and os.path.exists(seen_fetch):
+                                # We've already fetched something from the same URI, re-use downloaded path
+                                self.log.info(f"Already visited {uri} in this run. Using cached download path..")
+                                output = seen_fetches[uri]
+                            else:
+                                # Pull sources from external locations (method depends on the URL)
+                                try:
+                                    # First we'll attempt by performing a Git clone
+                                    # (since not all services hint at being a repository in their URL),
+                                    output = git_clone_repo(source, old_update_time, self.log, update_dir)
+                                except SkipSource:
+                                    raise
+                                except Exception as git_ex:
+                                    # Should that fail, we'll attempt a direct-download using Python Requests
+                                    if not uri.endswith(".git"):
+                                        # Proceed with direct download, raise exception as required if necessary
+                                        output = url_download(source, old_update_time, self.log, update_dir)
+                                    else:
+                                        # Raise Git Exception
+                                        raise git_ex
+                                # Add output path to the list of seen fetches in this run
+                                seen_fetches[uri] = output
 
-                    except SkipSource:
-                        # This source hasn't changed, no need to re-import into Assemblyline
-                        self.log.info(f"No new {self.updater_type} rule files to process for {source_name}")
-                        if source_name in previous_hashes:
-                            files_sha256[source_name] = previous_hashes[source_name]
-                        self.push_status("DONE", "Skipped.")
-                    except Exception as e:
-                        self.push_status("ERROR", str(e))
-                        continue
+                            file = extract_safelist(
+                                output,
+                                source["pattern"],
+                                self.log,
+                                self._service.config.get("trusted_distributors", []),
+                            )
 
-                    self.set_source_update_time(run_time)
-                    self.set_source_extra(files_sha256)
+                            # Add to collection of sources for caching purposes
+                            self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
+                            previous_hashes[source_name] = {file: get_sha256_for_file(file)}
+                            self.push_status("UPDATING", "Importing..")
+                            # Import into Assemblyline
+                            self.import_update(file, al_client, source_name, default_classification)
+                            self.push_status("DONE", "Signature(s) Imported.")
+                        except SkipSource:
+                            # This source hasn't changed, no need to re-import into Assemblyline
+                            self.log.info(f"No new {self.updater_type} rule files to process for {source_name}")
+                            if source_name in previous_hashes:
+                                files_sha256[source_name] = previous_hashes[source_name]
+                            seen_fetches[uri] = "skipped"
+                            self.push_status("DONE", "Skipped.")
+                            break
+                        except Exception as e:
+                            # There was an issue with this source, report and continue to the next
+                            self.log.error(f"Problem with {source['name']}: {e}")
+                            self.push_status("ERROR", str(e))
+                            continue
+
+                        self.set_source_update_time(run_time)
+                        self.set_source_extra(files_sha256)
+                        break
         self.set_active_config_hash(self.config_hash(service))
         self.local_update_flag.set()
 
