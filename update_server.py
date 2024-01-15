@@ -18,8 +18,8 @@ from assemblyline_client import Client, get_client
 from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, urlparse
 from assemblyline_v4_service.updater.updater import ServiceUpdater, temporary_api_key
 
-UI_SERVER = os.getenv('UI_SERVER', 'https://nginx')
-UI_SERVER_CA = os.environ.get('AL_ROOT_CA', '/etc/assemblyline/ssl/al_root-ca.crt')
+UI_SERVER = os.getenv("UI_SERVER", "https://nginx")
+UI_SERVER_CA = os.environ.get("AL_ROOT_CA", "/etc/assemblyline/ssl/al_root-ca.crt")
 HASH_LEN = 1000
 
 csv.field_size_limit(sys.maxsize)
@@ -32,19 +32,19 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
     :param previous_update:
     :return:
     """
-    name = source['name']
-    uri = source['uri']
-    pattern = source.get('pattern', None)
-    username = source.get('username', None)
-    password = source.get('password', None)
-    ca_cert = source.get('ca_cert', None)
-    ignore_ssl_errors = source.get('ssl_ignore_errors', False)
+    name = source["name"]
+    uri = source["uri"]
+    pattern = source.get("pattern", None)
+    username = source.get("username", None)
+    password = source.get("password", None)
+    ca_cert = source.get("ca_cert", None)
+    ignore_ssl_errors = source.get("ssl_ignore_errors", False)
     auth = (username, password) if username and password else None
 
-    proxy = source.get('proxy', None)
-    headers_list = source.get('headers', [])
+    proxy = source.get("proxy", None)
+    headers_list = source.get("headers", [])
     headers = {}
-    [headers.update({header['name']: header['value']}) for header in headers_list]
+    [headers.update({header["name"]: header["value"]}) for header in headers_list]
 
     logger.info(f"{name} source is configured to {'ignore SSL errors' if ignore_ssl_errors else 'verify SSL'}.")
     if ca_cert:
@@ -56,20 +56,20 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
     session.verify = not ignore_ssl_errors
 
     # Let https requests go through proxy
-    proxies = {'http': proxy, 'https': proxy} if proxy else None
+    proxies = {"http": proxy, "https": proxy} if proxy else None
 
     try:
         response = None
-        with tempfile.NamedTemporaryFile('w') as private_key_file:
-            if source.get('private_key'):
-                logger.info('A private key has been provided with this source')
-                private_key_file.write(source['private_key'])
+        with tempfile.NamedTemporaryFile("w") as private_key_file:
+            if source.get("private_key"):
+                logger.info("A private key has been provided with this source")
+                private_key_file.write(source["private_key"])
                 private_key_file.seek(0)
                 session.cert = private_key_file.name
 
             # Check the response header for the last modified date
             response = session.head(uri, auth=auth, headers=headers, proxies=proxies)
-            last_modified = response.headers.get('Last-Modified', None)
+            last_modified = response.headers.get("Last-Modified", None)
             if last_modified:
                 # Convert the last modified time to epoch
                 last_modified = time.mktime(time.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z"))
@@ -82,14 +82,14 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
             if previous_update:
                 previous_update = time.strftime("%a, %d %b %Y %H:%M:%S %Z", time.gmtime(previous_update))
                 if headers:
-                    headers['If-Modified-Since'] = previous_update
+                    headers["If-Modified-Since"] = previous_update
                 else:
-                    headers = {'If-Modified-Since': previous_update}
+                    headers = {"If-Modified-Since": previous_update}
 
             response = session.get(uri, auth=auth, headers=headers, proxies=proxies, stream=True)
 
         # Check the response code
-        if response.status_code == requests.codes['not_modified']:
+        if response.status_code == requests.codes["not_modified"]:
             # File has not been modified since last update, do nothing
             raise SkipSource()
         elif response.ok:
@@ -98,7 +98,7 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
 
             file_name = os.path.basename(urlparse(uri).path)
             file_path = os.path.join(output_dir, file_name)
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 for content in response.iter_content(BLOCK_SIZE):
                     f.write(content)
 
@@ -120,19 +120,19 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
 
 
 def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
-    logger.info(f'Extracting safelist file from {file}')
+    logger.info(f"Extracting safelist file from {file}")
     dir = os.path.dirname(file)
     try:
         # Check if we're dealing with an NSRL ISO
         iso = pycdlib.PyCdlib()
         iso.open(file)
-        iso.get_entry('/NSRLFILE.ZIP;1')
+        iso.get_entry("/NSRLFILE.ZIP;1")
         del iso
         logger.info(f'{file} is an NSRL ISO. Extracting embedded "NSRLFile.txt.zip"..')
 
         # If we are, then we need to extract the embedded file as assign that as the 'true' file to be extracted
-        zip_file = os.path.join(dir, 'NSRLFile.txt.zip')
-        subprocess.run(['7z', 'x', '-y', file, f'-o{dir}', 'NSRLFile.txt.zip'], capture_output=True)
+        zip_file = os.path.join(dir, "NSRLFile.txt.zip")
+        subprocess.run(["7z", "x", "-y", file, f"-o{dir}", "NSRLFile.txt.zip"], capture_output=True)
         os.unlink(file)
         file = zip_file
 
@@ -146,14 +146,14 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
 
     logger.info(f"Extracting {pattern} from {file}..")
     safelist_file = os.path.join(dir, pattern)
-    subprocess.run(['7z', 'x', '-y', file, f'-o{dir}', pattern], capture_output=True)
-    logger.info(f'Extraction complete: {safelist_file}')
+    subprocess.run(["7z", "x", "-y", file, f"-o{dir}", pattern], capture_output=True)
+    logger.info(f"Extraction complete: {safelist_file}")
     os.unlink(file)
 
-    safe_distributors_list_regex = '|'.join(safe_distributors_list) if safe_distributors_list else None
+    safe_distributors_list_regex = "|".join(safe_distributors_list) if safe_distributors_list else None
     try:
-        if safelist_file.endswith('.db'):
-            with tempfile.NamedTemporaryFile('w', delete=False) as csv:
+        if safelist_file.endswith(".db"):
+            with tempfile.NamedTemporaryFile("w", delete=False) as csv:
                 # Assume this is a NSRL SQL DB
                 with sqlite3.connect(safelist_file) as db:
                     # Include expected header for CSV format
@@ -161,15 +161,25 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
                     package_filter = ""
                     if safe_distributors_list_regex:
                         # Retrieve the list of package_ids associated to each manufacturer
-                        logger.info(f'Retrieving package_ids that belong to the following distributor pattern: {safe_distributors_list_regex}')
-                        package_ids = [str(r[1]) for r in db.execute("SELECT MFG.name, PKG.package_id FROM PKG JOIN MFG USING (manufacturer_id)") if re.match(safe_distributors_list_regex, r[0])]
+                        logger.info(
+                            f"Retrieving package_ids that belong to the following distributor pattern: {safe_distributors_list_regex}"
+                        )
+                        package_ids = [
+                            str(r[1])
+                            for r in db.execute(
+                                "SELECT MFG.name, PKG.package_id FROM PKG JOIN MFG USING (manufacturer_id)"
+                            )
+                            if re.match(safe_distributors_list_regex, r[0])
+                        ]
                         package_filter = f"WHERE FILE.package_id IN ({', '.join(package_ids)})"
-                    for r in db.execute(f"SELECT DISTINCT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size FROM FILE {package_filter}"):
+                    for r in db.execute(
+                        f"SELECT DISTINCT FILE.sha256, FILE.sha1, FILE.md5, FILE.file_name, FILE.file_size FROM FILE {package_filter}"
+                    ):
                         if not len(r) == 5:
                             # We're falling short of expectations, raise a warning about the row and continue
                             logger.warning(f"Expected 5 items but got: {r}. Skipping row..")
                             continue
-                        csv.write(','.join([safe_str(i, force_str=True) for i in r]) + "\n")
+                        csv.write(",".join([safe_str(i, force_str=True) for i in r]) + "\n")
                 csv.flush()
                 os.unlink(safelist_file)
                 safelist_file = csv.name
@@ -187,13 +197,13 @@ class SafelistUpdateServer(ServiceUpdater):
     def import_update(self, file_path, client: Client, source_name: str, default_classification=None):
         success = 0
         with open(file_path) as fh:
-            reader = csv.reader(fh, delimiter=',', quotechar='"')
+            reader = csv.reader(fh, delimiter=",", quotechar='"')
             hash_list = []
 
             def add_hash_set() -> int:
                 try:
                     resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
-                    return resp['success']
+                    return resp["success"]
                 except Exception as e:
                     self.log.error(f"Failed to insert hash into safelist: {str(e)}")
                 return 0
@@ -206,7 +216,7 @@ class SafelistUpdateServer(ServiceUpdater):
                     else:
                         # Commas found in filename, preserve this in safelist
                         sha256, sha1, md5 = line[:3]
-                        filename = ','.join(line[3:-1])
+                        filename = ",".join(line[3:-1])
                         size = line[-1]
                     if sha1 == "SHA-1":
                         # Assume this is a header for a CSV and move onto next line
@@ -215,26 +225,24 @@ class SafelistUpdateServer(ServiceUpdater):
                     data = {
                         "file": {},
                         "hashes": {},
-                        "sources": [
-                            {"name": source_name,
-                                'type': 'external',
-                                "reason": ["Exists in source"]}
-                        ],
-                        'type': "file"
+                        "sources": [{"name": source_name, "type": "external", "reason": ["Exists in source"]}],
+                        "type": "file",
                     }
                     if md5:
-                        data['hashes']['md5'] = md5.lower()
+                        data["hashes"]["md5"] = md5.lower()
                     if sha1:
-                        data['hashes']['sha1'] = sha1.lower()
+                        data["hashes"]["sha1"] = sha1.lower()
                     if sha256:
-                        data['hashes']['sha256'] = sha256.lower()
+                        data["hashes"]["sha256"] = sha256.lower()
                     if size:
-                        data['file']['size'] = size
+                        data["file"]["size"] = size
                     if filename:
-                        data['file']['name'] = [filename]
-                        data['sources'][0]['reason'] = [f"Exists in source as {filename}"]
+                        data["file"]["name"] = [filename]
+                        data["sources"][0]["reason"] = [f"Exists in source as {filename}"]
                 except Exception as e:
-                    self.log.warning(f'An error occurred while preparing safelisted metadata about a file using [{line}]: {e}. Skipping..')
+                    self.log.warning(
+                        f"An error occurred while preparing safelisted metadata about a file using [{line}]: {e}. Skipping.."
+                    )
                     continue
 
                 hash_list.append(data)
@@ -264,7 +272,7 @@ class SafelistUpdateServer(ServiceUpdater):
 
             # Parse updater configuration
             previous_hashes: dict[str, dict[str, str]] = self.get_source_extra()
-            sources: dict[str, UpdateSource] = {_s['name']: _s for _s in service.update_config.sources}
+            sources: dict[str, UpdateSource] = {_s["name"]: _s for _s in service.update_config.sources}
             files_sha256: dict[str, dict[str, str]] = {}
 
             # Go through each source and download file
@@ -279,25 +287,27 @@ class SafelistUpdateServer(ServiceUpdater):
 
                 self.push_status("UPDATING", "Starting..")
                 source = source_obj.as_primitives()
-                uri: str = source['uri']
+                uri: str = source["uri"]
                 self.log.info(f"Processing source: {source['name'].upper()}")
 
                 if "${QUARTERLY}" in uri:
-                    y, m = datetime.now().strftime("%Y.%m").split('.')
+                    y, m = datetime.now().strftime("%Y.%m").split(".")
                     d = 1
-                    m = "%02d" % (math.floor(float(int(m)/3))*3)
-                    source['uri'] = source['uri'].replace("${QUARTERLY}", f"{y}.{m}.{d}")
-                    source['pattern'] = source['pattern'].replace("${QUARTERLY}", f"{y}.{m}.{d}")
+                    m = "%02d" % (math.floor(float(int(m) / 3)) * 3)
+                    source["uri"] = source["uri"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
+                    source["pattern"] = source["pattern"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
 
                 with tempfile.TemporaryDirectory() as update_dir:
                     try:
                         self.push_status("UPDATING", "Pulling..")
                         # Pull sources from external locations (method depends on the URL)
-                        file = url_download(source=source, previous_update=old_update_time, logger=self.log,
-                                            output_dir=update_dir)
+                        file = url_download(
+                            source=source, previous_update=old_update_time, logger=self.log, output_dir=update_dir
+                        )
 
-                        file = extract_safelist(file, source['pattern'], self.log,
-                                                self._service.config.get('trusted_distributors', []))
+                        file = extract_safelist(
+                            file, source["pattern"], self.log, self._service.config.get("trusted_distributors", [])
+                        )
                         # Add to collection of sources for caching purposes
                         self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
                         previous_hashes[source_name] = {file: get_sha256_for_file(file)}
@@ -308,7 +318,7 @@ class SafelistUpdateServer(ServiceUpdater):
 
                     except SkipSource:
                         # This source hasn't changed, no need to re-import into Assemblyline
-                        self.log.info(f'No new {self.updater_type} rule files to process for {source_name}')
+                        self.log.info(f"No new {self.updater_type} rule files to process for {source_name}")
                         if source_name in previous_hashes:
                             files_sha256[source_name] = previous_hashes[source_name]
                         self.push_status("DONE", "Skipped.")
@@ -322,6 +332,6 @@ class SafelistUpdateServer(ServiceUpdater):
         self.local_update_flag.set()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     with SafelistUpdateServer(default_pattern="*.txt") as server:
         server.serve_forever()
