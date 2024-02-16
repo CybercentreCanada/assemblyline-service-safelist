@@ -195,7 +195,7 @@ class SafelistUpdateServer(ServiceUpdater):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def import_update(self, file_path, client: UpdaterClient, source_name: str, default_classification=None):
+    def import_update(self, file_path, source_name: str, default_classification=None):
         success = 0
         with open(file_path) as fh:
             reader = csv.reader(fh, delimiter=",", quotechar='"')
@@ -203,7 +203,7 @@ class SafelistUpdateServer(ServiceUpdater):
 
             def add_hash_set() -> int:
                 try:
-                    resp = client._connection.put("api/v4/safelist/add_update_many/", json=hash_list)
+                    resp = self.client.safelist.add_update_many(hash_list)
                     return resp["success"]
                 except Exception as e:
                     self.log.error(f"Failed to insert hash into safelist: {str(e)}")
