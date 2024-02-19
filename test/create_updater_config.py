@@ -22,7 +22,6 @@ with open(UPDATE_CONFIG, 'w') as fh:
         'sources': [x for x in service.get("update_config", {}).get("sources", [])],
         'api_user': USER,
         'api_key': API_KEY,
-        'ui_server': SERVER
     })
     fh.write(yml)
     print(yml)
