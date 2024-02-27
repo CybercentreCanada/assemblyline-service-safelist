@@ -21,8 +21,6 @@ from assemblyline_v4_service.updater.updater import (
     classification,
 )
 
-HASH_LEN = 1000
-
 csv.field_size_limit(sys.maxsize)
 
 
@@ -196,7 +194,6 @@ class SafelistUpdateServer(ServiceUpdater):
         super().__init__(*args, **kwargs)
 
     def import_update(self, file_path, source_name: str, default_classification=None):
-        success = 0
         with open(file_path) as fh:
             reader = csv.reader(fh, delimiter=",", quotechar='"')
             hash_list = []
@@ -248,16 +245,8 @@ class SafelistUpdateServer(ServiceUpdater):
 
                 hash_list.append(data)
 
-                if len(hash_list) % HASH_LEN == 0:
-                    # Add 1000 item batch, record success, then start anew
-                    success += add_hash_set()
-                    hash_list = []
-
-            # Add any remaining items to safelist (if any)
-            success += add_hash_set()
-
         os.unlink(file_path)
-        self.log.info(f"Import finished. {success} hashes have been processed.")
+        self.log.info(f"Import finished. {add_hash_set()} hashes have been processed.")
 
     def do_local_update(self) -> None:
         # No need to perform local updates, all service usage will be with service-server or directly with the datastore
