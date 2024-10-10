@@ -1,0 +1,23 @@
+{
+  "template": "https://github.com/CybercentreCanada/assemblyline-service-template.git",
+  "commit": "dfed59079369f80850e7a23db722cc84fc7a2832",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "service_name": "safelist",
+      "__svc_name": "safelist",
+      "__repository": "assemblyline-service-safelist",
+      "__pkg_name": "safelist",
+      "__class_name": "Safelist",
+      "short_description": "This service will check the file hashes against Assemblyline's internal safelist infrastructure and mark files as safe accordingly.",
+      "short_description_fr": "Ce service vérifiera les hashs des fichiers par rapport à l'infrastructure interne de la liste de sécurité d'Assemblyline et marquera les fichiers comme sûrs en conséquence.",
+      "stage": "FILTER",
+      "category": "Filtering",
+      "org_name_full": "CybercentreCanada",
+      "org_name_short": "cccs",
+      "license": "mit",
+      "_template": "https://github.com/CybercentreCanada/assemblyline-service-template.git"
+    }
+  },
+  "directory": null
+}
