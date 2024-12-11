@@ -193,7 +193,7 @@ class SafelistUpdateServer(ServiceUpdater):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def import_update(self, file_path, source_name: str, default_classification=None):
+    def import_update(self, file_path, source_name: str, *args, **kwargs):
         with open(file_path) as fh:
             reader = csv.reader(fh, delimiter=",", quotechar='"')
             hash_list = []
