@@ -76,7 +76,7 @@ General Assemblyline documentation can be found at: https://cybercentrecanada.gi
 
 # Service Safelist
 
-Ce service vérifiera les hashs des fichiers par rapport à l'infrastructure interne de la liste de sécurité d'Assemblyline et marquera les fichiers comme sûrs en conséquence.
+Ce service vérifie que les hachages des fichiers font partie de la liste de hachages sûrs de l'infrastructure interne d'Assemblyline et, si c'est le cas, le service va identifier ces fichiers comme étant sûrs.
 
 ## Détails du service
 
@@ -99,8 +99,8 @@ SHA-256,SHA-1,MD5,Nom de fichier,Taille de fichier
 Notez que nous attendons un en-tête comme première ligne du fichier CSV.
 
 ### Distributeurs de confiance
-Parce que nous ne pouvons pas nécessairement faire confiance à tous les hashs provenant de NSRL, nous avons choisi d'utiliser le distributeur
-comme moyen de définir quels fichiers sont considérés comme sûrs. Pour simplifier les choses, vous pouvez utiliser des expressions rationnelles pour définir les distributeurs auxquels vous devez faire confiance.
+Parce que nous ne pouvons pas nécessairement faire confiance à tous les hashages provenant de NSRL, nous avons choisi d'utiliser le distributeur
+comme moyen de définir quels fichiers sont considérés comme sûrs. Pour simplifier les choses, vous pouvez utiliser des expressions régulières pour définir les distributeurs auxquels vous devez faire confiance.
 
 Par exemple, si je veux faire confiance à tout ce qui vient de 2K, je mettrais dans le manifeste du service :
 ``yaml
