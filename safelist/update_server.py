@@ -7,12 +7,12 @@ import sys
 import tempfile
 import time
 
-import pandas as pd
 import pycdlib
 import requests
 from assemblyline.common.digests import get_sha256_for_file
 from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
+from assemblyline_v4_service.updater.client import UpdaterClient
 from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, git_clone_repo, urlparse
 from assemblyline_v4_service.updater.updater import (
     SOURCE_UPDATE_ATTEMPT_DELAY_BASE,
@@ -194,11 +194,8 @@ class SafelistUpdateServer(ServiceUpdater):
         super().__init__(*args, **kwargs)
 
     def import_update(self, file_path, source_name: str, *args, **kwargs):
-        HASH_LEN = os.getenv('BATCH_SAFELIST_HASH', 1000)
-        self.log.info(f"Walk by hash of {HASH_LEN} into {file_path}")
-        success = 0
-        for chunks in pd.read_csv(file_path, chunksize=HASH_LEN, low_memory=False, delimiter=",", quotechar='"'):
-            self.log.info(f"Total hash uploaded at started of loop by chunk : {success} ")
+        with open(file_path) as fh:
+            reader = csv.reader(fh, delimiter=",", quotechar='"')
             hash_list = []
 
             def add_hash_set() -> int:
@@ -209,7 +206,7 @@ class SafelistUpdateServer(ServiceUpdater):
                     self.log.error(f"Failed to insert hash into safelist: {str(e)}")
                 return 0
 
-            for index, line in chunks.iterrows():
+            for line in reader:
                 try:
                     if len(line) == 5:
                         # No commas in filename
@@ -247,14 +244,6 @@ class SafelistUpdateServer(ServiceUpdater):
                     continue
 
                 hash_list.append(data)
-
-                if len(hash_list) % HASH_LEN == 0:
-                    # Add [HASH_LEN] item batch, record success, then start anew
-                    success += add_hash_set()
-                    hash_list = []
-
-            # Add any remaining items to safelist (if any)
-            success += add_hash_set()
 
         os.unlink(file_path)
         self.log.info(f"Import finished. {add_hash_set()} hashes have been processed.")
