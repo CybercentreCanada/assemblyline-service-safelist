@@ -12,7 +12,7 @@ import requests
 from assemblyline.common.digests import get_sha256_for_file
 from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
-from assemblyline_v4_service.updater.client import UpdaterClient
+from assemblyline_v4_service.updater.client import UpdaterClient, SIGNATURE_UPDATE_BATCH
 from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, git_clone_repo, urlparse
 from assemblyline_v4_service.updater.updater import (
     SOURCE_UPDATE_ATTEMPT_DELAY_BASE,
@@ -20,8 +20,6 @@ from assemblyline_v4_service.updater.updater import (
     ServiceUpdater,
     classification,
 )
-
-HASH_LEN = 1000
 
 csv.field_size_limit(sys.maxsize)
 
@@ -248,7 +246,7 @@ class SafelistUpdateServer(ServiceUpdater):
 
                 hash_list.append(data)
 
-                if len(hash_list) % HASH_LEN == 0:
+                if len(hash_list) % SIGNATURE_UPDATE_BATCH == 0:
                     # Add 1000 item batch, record success, then start anew
                     success += add_hash_set()
                     hash_list = []
