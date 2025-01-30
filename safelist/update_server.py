@@ -284,10 +284,9 @@ class SafelistUpdateServer(ServiceUpdater):
 
                     self.push_status("UPDATING", "Starting..")
                     source = source_obj.as_primitives()
-                    uri: str = source["uri"]
                     default_classification = source.get("default_classification", classification.UNRESTRICTED)
 
-                    if "${QUARTERLY}" in uri:
+                    if "${QUARTERLY}" in source["uri"]:
                         # Special case for quarterly updates from NSRL
                         y, m = datetime.now().strftime("%Y.%m").split(".")
                         d = 1
@@ -295,6 +294,7 @@ class SafelistUpdateServer(ServiceUpdater):
                         source["uri"] = source["uri"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
                         source["pattern"] = source["pattern"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
 
+                    uri: str = source["uri"]
                     try:
                         self.push_status("UPDATING", "Pulling..")
                         output = None
