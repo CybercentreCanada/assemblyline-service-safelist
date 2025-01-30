@@ -1,4 +1,6 @@
 import csv
+import datetime
+import math
 import os
 import re
 import sqlite3
@@ -284,6 +286,14 @@ class SafelistUpdateServer(ServiceUpdater):
                     source = source_obj.as_primitives()
                     uri: str = source["uri"]
                     default_classification = source.get("default_classification", classification.UNRESTRICTED)
+
+                    if "${QUARTERLY}" in uri:
+                        # Special case for quarterly updates from NSRL
+                        y, m = datetime.now().strftime("%Y.%m").split(".")
+                        d = 1
+                        m = "%02d" % (math.floor(float(int(m) / 3)) * 3)
+                        source["uri"] = source["uri"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
+                        source["pattern"] = source["pattern"].replace("${QUARTERLY}", f"{y}.{m}.{d}")
 
                     try:
                         self.push_status("UPDATING", "Pulling..")
