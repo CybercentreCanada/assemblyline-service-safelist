@@ -14,7 +14,7 @@ import requests
 from assemblyline.common.digests import get_sha256_for_file
 from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
-from assemblyline_v4_service.updater.client import UpdaterClient
+from assemblyline_v4_service.updater.client import UpdaterClient, SIGNATURE_UPDATE_BATCH
 from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, git_clone_repo, urlparse
 from assemblyline_v4_service.updater.updater import (
     SOURCE_UPDATE_ATTEMPT_DELAY_BASE,
@@ -196,6 +196,7 @@ class SafelistUpdateServer(ServiceUpdater):
         super().__init__(*args, **kwargs)
 
     def import_update(self, file_path, source_name: str, *args, **kwargs):
+        success = 0
         with open(file_path) as fh:
             reader = csv.reader(fh, delimiter=",", quotechar='"')
             hash_list = []
@@ -247,8 +248,16 @@ class SafelistUpdateServer(ServiceUpdater):
 
                 hash_list.append(data)
 
+                if len(hash_list) % SIGNATURE_UPDATE_BATCH == 0:
+                    # Add 1000 item batch, record success, then start anew
+                    success += add_hash_set()
+                    hash_list = []
+
+            # Add any remaining items to safelist (if any)
+            success += add_hash_set()
+
         os.unlink(file_path)
-        self.log.info(f"Import finished. {add_hash_set()} hashes have been processed.")
+        self.log.info(f"Import finished. {success} hashes have been processed.")
 
     def do_local_update(self) -> None:
         # No need to perform local updates, all service usage will be with service-server or directly with the datastore
