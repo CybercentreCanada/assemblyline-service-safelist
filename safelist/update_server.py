@@ -14,8 +14,14 @@ import requests
 from assemblyline.common.digests import get_sha256_for_file
 from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
-from assemblyline_v4_service.updater.client import UpdaterClient, SIGNATURE_UPDATE_BATCH
-from assemblyline_v4_service.updater.helper import BLOCK_SIZE, SkipSource, add_cacert, git_clone_repo, urlparse
+from assemblyline_v4_service.updater.client import SIGNATURE_UPDATE_BATCH, UpdaterClient
+from assemblyline_v4_service.updater.helper import (
+    BLOCK_SIZE,
+    SkipSource,
+    add_cacert,
+    git_clone_repo,
+    urlparse,
+)
 from assemblyline_v4_service.updater.updater import (
     SOURCE_UPDATE_ATTEMPT_DELAY_BASE,
     SOURCE_UPDATE_ATTEMPT_MAX_RETRY,
@@ -192,8 +198,6 @@ def extract_safelist(file, pattern, logger, safe_distributors_list=[]):
 
 
 class SafelistUpdateServer(ServiceUpdater):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
     def import_update(self, file_path, source_name: str, *args, **kwargs):
         success = 0
@@ -370,5 +374,5 @@ class SafelistUpdateServer(ServiceUpdater):
 
 
 if __name__ == "__main__":
-    with SafelistUpdateServer(default_pattern="*.txt") as server:
+    with SafelistUpdateServer() as server:
         server.serve_forever()
