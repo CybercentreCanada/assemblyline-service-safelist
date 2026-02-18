@@ -1,5 +1,4 @@
 import csv
-import datetime
 import math
 import os
 import re
@@ -8,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 
 import pycdlib
 import requests
