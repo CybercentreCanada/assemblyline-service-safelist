@@ -14,7 +14,7 @@ import requests
 from assemblyline.common.digests import get_sha256_for_file
 from assemblyline.common.str_utils import safe_str
 from assemblyline.odm.models.service import Service, UpdateSource
-from assemblyline_v4_service.updater.client import SIGNATURE_UPDATE_BATCH, UpdaterClient
+from assemblyline_v4_service.updater.client import SIGNATURE_UPDATE_BATCH
 from assemblyline_v4_service.updater.helper import (
     BLOCK_SIZE,
     SkipSource,
@@ -41,7 +41,7 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
     """
     name = source["name"]
     uri = source["uri"]
-    pattern = source.get("pattern", None)
+    #pattern = source.get("pattern", None)
     username = source.get("username", None)
     password = source.get("password", None)
     ca_cert = source.get("ca_cert", None)
@@ -274,9 +274,7 @@ class SafelistUpdateServer(ServiceUpdater):
             self.log.info("Connected!")
 
             # Parse updater configuration
-            previous_hashes: dict[str, dict[str, str]] = self.get_source_extra()
             sources: dict[str, UpdateSource] = {_s["name"]: _s for _s in service.update_config.sources}
-            files_sha256: dict[str, dict[str, str]] = {}
 
             # Map already visited URIs to download paths (avoid re-cloning/re-downloads)
             seen_fetches = dict()
@@ -285,17 +283,23 @@ class SafelistUpdateServer(ServiceUpdater):
             while self.update_queue.qsize():
                 update_attempt = -1
                 source_name = self.update_queue.get()
+
+                if source_name not in sources:
+                    # This source has been removed from the service configuration
+                    continue
+
+                files_sha256: dict[str, str] = {}
+                previous_hashes: dict[str, str] = self.get_source_extra(source_name)
+
                 while update_attempt < SOURCE_UPDATE_ATTEMPT_MAX_RETRY:
                     # Introduce an exponential delay between each attempt
                     time.sleep(SOURCE_UPDATE_ATTEMPT_DELAY_BASE**update_attempt)
                     update_attempt += 1
 
-                    # Set current source for pushing state to UI
-                    self._current_source = source_name
                     source_obj = sources[source_name]
-                    old_update_time = self.get_source_update_time()
+                    old_update_time = self.get_source_update_time(source_name)
 
-                    self.push_status("UPDATING", "Starting..")
+                    self.push_status(source_name, "UPDATING", "Starting..")
                     source = source_obj.as_primitives()
                     default_classification = source.get("default_classification", classification.UNRESTRICTED)
 
@@ -309,7 +313,7 @@ class SafelistUpdateServer(ServiceUpdater):
 
                     uri: str = source["uri"]
                     try:
-                        self.push_status("UPDATING", "Pulling..")
+                        self.push_status(source_name, "UPDATING", "Pulling..")
                         output = None
                         seen_fetch = seen_fetches.get(uri)
                         if seen_fetch == "skipped":
@@ -347,27 +351,26 @@ class SafelistUpdateServer(ServiceUpdater):
 
                         # Add to collection of sources for caching purposes
                         self.log.info(f"Found new {self.updater_type} rule files to process for {source_name}!")
-                        previous_hashes[source_name] = {file: get_sha256_for_file(file)}
-                        self.push_status("UPDATING", "Importing..")
+                        files_sha256[file] = get_sha256_for_file(file)
+                        self.push_status(source_name, "UPDATING", "Importing..")
                         # Import into Assemblyline
                         self.import_update(file, source_name, default_classification)
-                        self.push_status("DONE", "Signature(s) Imported.")
+                        self.push_status(source_name, "DONE", "Signature(s) Imported.")
                     except SkipSource:
                         # This source hasn't changed, no need to re-import into Assemblyline
                         self.log.info(f"No new {self.updater_type} rule files to process for {source_name}")
-                        if source_name in previous_hashes:
-                            files_sha256[source_name] = previous_hashes[source_name]
+                        files_sha256 = previous_hashes
                         seen_fetches[uri] = "skipped"
-                        self.push_status("DONE", "Skipped.")
+                        self.push_status(source_name, "DONE", "Skipped.")
                         break
                     except Exception as e:
                         # There was an issue with this source, report and continue to the next
                         self.log.error(f"Problem with {source['name']}: {e}")
-                        self.push_status("ERROR", str(e))
+                        self.push_status(source_name, "ERROR", str(e))
                         continue
 
-                    self.set_source_update_time(run_time)
-                    self.set_source_extra(files_sha256)
+                    self.set_source_update_time(source_name, run_time)
+                    self.set_source_extra(source_name, files_sha256)
                     break
         self.set_active_config_hash(self.config_hash(service))
         self.local_update_flag.set()
