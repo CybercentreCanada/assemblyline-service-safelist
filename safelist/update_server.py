@@ -112,7 +112,9 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
             return file_path
         else:
             logger.warning(f"Download not successful: {response.content}")
-            return None
+            raise requests.HTTPError(
+                f"Download not successful: {response.status_code} {response.reason}", response=response
+            )
 
     except SkipSource:
         # Raise to calling function for handling
@@ -120,7 +122,7 @@ def url_download(source, previous_update=None, logger=None, output_dir=None):
     except Exception as e:
         # Catch all other types of exceptions such as ConnectionError, ProxyError, etc.
         logger.warning(str(e))
-        return False
+        raise
     finally:
         # Close the requests session
         session.close()
